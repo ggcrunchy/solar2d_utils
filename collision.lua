@@ -30,7 +30,7 @@ local assert = assert
 local adaptive = require("table_ops.adaptive")
 local args = require("iterator_ops.args")
 local powers_of_2 = require("bitwise_ops.powers_of_2")
-local timers = require("game.Timers")
+local timers = require("corona_utils.timers")
 
 -- Corona globals --
 local display = display

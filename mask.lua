@@ -29,7 +29,7 @@ local open = io.open
 local pairs = pairs
 
 -- Modules --
-local file_utils = require("utils.File")
+local file_utils = require("corona_utils.file")
 local str_utils = require("utils.String")
 
 -- Corona globals --
