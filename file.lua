@@ -33,7 +33,7 @@ local sub = string.sub
 local type = type
 
 -- Modules --
-local str_utils = require("utils.String")
+local str_utils = require("tektite_core.string")
 
 -- Corona globals --
 local system = system

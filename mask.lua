@@ -30,7 +30,7 @@ local pairs = pairs
 
 -- Modules --
 local file_utils = require("corona_utils.file")
-local str_utils = require("utils.String")
+local str_utils = require("tektite_core.string")
 
 -- Corona globals --
 local display = display
