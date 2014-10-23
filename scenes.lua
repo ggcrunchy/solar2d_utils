@@ -29,6 +29,11 @@ local random = math.random
 -- Corona modules --
 local composer = require("composer")
 
+-- Cached module references --
+local _GoToScene_
+local _Send_
+local _SetListenFunc_
+
 -- Exports --
 local M = {}
 
@@ -80,12 +85,19 @@ function M.GoToScene (args)
 	Args.effect, Args.params, Args.time = nil
 end
 
+--- DOCME
+function M.HideOverlay (...)
+	_Send_("message:hide_overlay")
+
+	composer.hideOverlay(...)
+end
+
 --- Factory.
 -- @ptable args Arguments to @{GoToScene}.
 -- @treturn function When called, will open the scene as per the arguments.
 function M.Opener (args)
 	return function()
-		M.GoToScene(args)
+		_GoToScene_(args)
 	end
 end
 
@@ -137,15 +149,20 @@ do
 			Effect = effect or "fade"
 		end
 
-		M.SetListenFunc(GoBack)
+		_SetListenFunc_(GoBack)
 	end
 end
 
 --- Convenience function, e.g. for callbacks: will @{Send} **"message:wants\_to\_go\_back"**
 -- to the current scene listener.
 function M.WantsToGoBack ()
-	M.Send("message:wants_to_go_back")
+	_Send_("message:wants_to_go_back")
 end
+
+-- Cache module members.
+_GoToScene_ = M.GoToScene
+_Send_ = M.Send
+_SetListenFunc_ = M.SetListenFunc
 
 -- Export the module.
 return M
