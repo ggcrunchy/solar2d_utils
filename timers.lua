@@ -25,9 +25,14 @@
 
 -- Standard library imports --
 local assert = assert
+local create = coroutine.create
+local error = error
 local max = math.max
-local wrap = coroutine.wrap
+local resume = coroutine.resume
 local yield = coroutine.yield
+
+-- Modules --
+local errors = require("tektite_core.errors")
 
 -- Corona globals --
 local system = system
@@ -152,7 +157,7 @@ end
 
 -- Wrapper to keep coroutine events in sync with timer
 local function Wrap (func)
-	local wrapped, et = wrap(func)
+	local coro, et = create(func)
 	local now = system.getTimer()
 
 	return function(event)
@@ -163,7 +168,17 @@ local function Wrap (func)
 
 		et.m_elapsed = event.time - now
 
-		return wrapped(event)
+		local ok, res = resume(coro, event)
+
+		if ok then
+			return res
+		else
+			errors.StoreTraceback(coro, res, 2)
+
+			res = errors.GetLastTraceback(true)
+
+			error(res, 3)
+		end
 	end
 end
 
