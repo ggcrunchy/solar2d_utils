@@ -69,13 +69,13 @@ local function OpenDB_Ex (what, file)
 	local db, info = OpenDB(file or "data"), Info[what]
 
 	if info and not Loaded[what] then
-		local setup = [[CREATE TABLE IF NOT EXISTS ]] .. what .. [[ (]] .. info.schema .. [[);]]
+		local setup = [[CREATE TABLE IF NOT EXISTS ]] .. what .. [[ (]] .. info.schema .. [[); BEGIN;]]
 
 		for _, item in ipairs(info) do
 			setup = setup .. [[INSERT OR IGNORE INTO ]] .. what .. [[ VALUES(]] .. item .. [[);]]
 		end
 
-		db:exec(setup)
+		db:exec(setup .. [[COMMIT;]])
 
 		Loaded[what] = true
 	end
