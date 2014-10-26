@@ -29,7 +29,7 @@ local pairs = pairs
 local tonumber = tonumber
 
 -- Modules --
-local str_utils = require("tektite_core.string")
+local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
 local system = system

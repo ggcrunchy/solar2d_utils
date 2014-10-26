@@ -29,8 +29,8 @@ local open = io.open
 local pairs = pairs
 
 -- Modules --
-local file_utils = require("corona_utils.file")
-local str_utils = require("tektite_core.string")
+local file = require("corona_utils.file")
+local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
 local display = display
@@ -81,7 +81,7 @@ function M.NewMask (w, h, name, base_dir)
 	base_dir = base_dir or system.TemporaryDirectory
 
 	-- If the mask exists, reuse it; otherwise, build it.
-	if not file_utils.Exists(name, base_dir) then
+	if not file.Exists(name, base_dir) then
 		local group = display.newGroup()
 		local xpad, ew = Extra(w)
 		local ypad, eh = Extra(h)
@@ -91,7 +91,7 @@ function M.NewMask (w, h, name, base_dir)
 
 		display.newRect(group, xpad, ypad, w + ew, h + eh)
 
-		name = name or str_utils.AddExtension(str_utils.NewName(), "png")
+		name = name or strings.AddExtension(strings.NewName(), "png")
 
 		display.save(group, name, base_dir)
 
@@ -123,7 +123,7 @@ end
 
 --- DOCME
 function M.NewMask_Pattern (patt, w, h, base_dir)
-	return M.NewMask(w, h, str_utils.AddExtension(format(patt, w, h), "png"), base_dir or system.CachesDirectory)
+	return M.NewMask(w, h, strings.AddExtension(format(patt, w, h), "png"), base_dir or system.CachesDirectory)
 end
 
 -- Helper for black regions of mask texture
@@ -225,7 +225,7 @@ function M.NewReel (dim)
 			-- Save the mask (if it was not already generated).
 			local base_dir = arg2 or system.CachesDirectory
 
-			if not file_utils.Exists(arg1, base_dir) then
+			if not file.Exists(arg1, base_dir) then
 				display.save(mgroup, { filename = arg1, baseDir = base_dir, isFullResolution = true })
 			end
 
