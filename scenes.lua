@@ -62,9 +62,9 @@ local Args = {}
 --
 -- The **name** field contains the scene name.
 --
--- If there is a true **no_effect** field, no transition effect is played. Otherwise, the
--- array part of _args_ may be populated with transition names; if so, one is randomly chosen
--- as the effect. If neither of those is the case, the **effect** key is used.
+-- If the **effect** key is **"none"**, no transition effect is played. Otherwise, the array
+-- part of _args_ may be populated with transition names, in which case one is randomly
+-- chosen as the effect. If neither of those is the case, the **effect** key is used.
 --
 -- The **params** and **time** keys are the same as for `composer.gotoScene`.
 function M.GoToScene (args)
@@ -72,11 +72,11 @@ function M.GoToScene (args)
 
 	if #args > 0 then
 		Args.effect = args[random(#args)]
-	else
+	elseif args.effect ~= "none" then
 		Args.effect = args.effect
 	end
 
-	if not args.no_effect then
+	if args.effect ~= "none" then
 		Args.time = args.time
 	end
 
