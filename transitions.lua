@@ -28,6 +28,7 @@ local pairs = pairs
 local rawequal = rawequal
 local remove = table.remove
 local setmetatable = setmetatable
+local yield = coroutine.yield
 
 -- Modules --
 local flow = require("coroutine_ops.flow")
@@ -93,6 +94,9 @@ function M.DoAndWait (target, params, update)
 	-- Wait for the transition to finish, performing any user-provided update.
 	if not flow.WaitWhile(DoingTransition, update, handle) then
 		transition.cancel(handle)
+
+		-- Yield to accommodate the cancel listener.
+		yield()
 	end
 
 	-- Remove all transition state and put the events into the cache.
