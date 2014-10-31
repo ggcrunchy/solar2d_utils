@@ -159,6 +159,31 @@ local function Find (list, object)
 end
 
 --
+local function FindFrom (list, object, pos)
+	for i = pos, 1, -2 do
+		if list[i] == object then
+			return i
+		end
+	end
+end
+
+--
+local function AuxForEach (list, index)
+	if index > 0 then
+		return FindFrom(list, list[index], index - 2)
+	elseif index < 0 then
+		return -index
+	end
+end
+
+--
+local function ForEach (list, object)
+	local pos = FindFrom(list, object, #(list or "") - 1)
+
+	return AuxForEach, list, pos and -pos or 0
+end
+
+--
 local function RemoveFrom (object, other, index)
 	local list = index and other or Partners[other]
 	local i, n = index or Find(list, object), #list
@@ -216,7 +241,8 @@ function M.DoOrDefer (object, other, phase, func)
 
 	-- Phase "ended", objects intact: break pairings.
 	elseif intact then
-		-- TODO: what should `list' be??? (Partners[object], I think... but I forgot; will have to finally attend to this soon)
+		local list = Partners[object]
+
 		for i = #(list or "") - 1, 1, -2 do
 			RemoveFrom(object, list[i])
 		end
@@ -356,6 +382,9 @@ end
 
 -- Enter Level response
 local function EnterLevel ()
+	physics.start()
+	physics.setGravity(0, 0)
+
 	IsHidden, Partners = {}, {}
 end
 
@@ -382,6 +411,8 @@ for k, v in pairs{
 
 	-- Leave Level --
 	leave_level = function()
+		physics.stop()
+
 		IsHidden, Partners = nil
 	end,
 
@@ -396,10 +427,6 @@ for k, v in pairs{
 } do
 	Runtime:addEventListener(k, v)
 end
-
--- Kick off physics, sans gravity.
-physics.start()
-physics.setGravity(0, 0)
 
 -- Export the module.
 return M
