@@ -206,10 +206,17 @@ local function Cleanup (object)
 end
 
 --
-local function DefAction () end
+--local function DefAction () end
+
+--
+local function WipeList (event)
+	print("BYE!", M.GetType(event.target))
+	Partners[event.target] = nil
+end
 
 --
 local function AddToList (object, other, func)
+	--[[
 	local index, list = Find(Partners[object] or {}, other)
 
 	if not index then
@@ -217,7 +224,17 @@ local function AddToList (object, other, func)
 		list[#list + 1] = func
 	elseif list[index + 1] == DefAction then
 		list[index + 1] = func
+	end]]
+	local list = Partners[object]
+
+	if not list then
+		list = {}
+
+		object:addEventListener("finalize", WipeList)
 	end
+
+	list[#list + 1] = other
+	list[#list + 1] = func
 
 	Partners[object] = list
 end
@@ -225,32 +242,61 @@ end
 -- Types used to manage physics interactions --
 local Types = setmetatable({}, { __mode = "k" })
 
+--
+local function RemoveAll (list)
+	if list then
+		local index, n = -1, #list
+
+		while true do
+			local pos = list[index]
+
+			if pos then
+				--
+				list[pos], list[pos + 1] = list[n - 1], list[n]
+				n, list[n], list[n - 1] = n - 2
+
+				--
+				index, list[index] = index - 1
+			else
+				break
+			end
+		end
+	end
+end
+
 --- DOCME
 function M.DoOrDefer (object, other, phase, func)
 	local intact = object.parent and other.parent
-
+-- object ~= other
 	-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
 	-- action; otherwise, perform it immediately.
 	if intact and phase == "began" then
 		if IsHidden[object] or IsHidden[other] then
 			AddToList(object, other, func)
-			AddToList(other, object, DefAction)
+		--	AddToList(other, object, DefAction)
 		else
 			func(object, other, Types[other])
 		end
 
 	-- Phase "ended", objects intact: break pairings.
 	elseif intact then
-		local list = Partners[object]
+		local list, index = Partners[object], -1
+	--	local n = #(list or "")
 
-		for i = #(list or "") - 1, 1, -2 do
-			RemoveFrom(object, list[i])
+		for pos in ForEach(list, other) do
+			list[index], index = pos, index - 1
 		end
 
+		RemoveAll(list)
+		--[[
+		for i = #(list or "") - 1, 1, -2 do
+			RemoveFrom(object, list[i])
+		end]]
+
 	-- One or both objects dead: break pairings and remove dead objects.
-	else
-		Cleanup(object)
-		Cleanup(other)
+--	elseif not object.parent then
+--		Cleanup(object)
+--		Cleanup(other)
 	end
 end
 
@@ -355,11 +401,11 @@ function M.SetVisibility (object, show)
 	--
 	if object.parent then
 		if IsHidden[object] and show then
-			local list1, t1 = Partners[object], Types[object]
+			local list1, otype, ni = Partners[object], Types[object], -1
 
 			for i = #(list1 or "") - 1, 1, -2 do
 				local other = list1[i]
-
+--[[
 				if other.parent and not IsHidden[other] then
 					local t2, j, list2 = Types[other], Find(Partners[other], object)
 
@@ -368,15 +414,37 @@ function M.SetVisibility (object, show)
 
 					RemoveFrom(nil, list1, i)
 					RemoveFrom(nil, list2, j)
+				end]]
+				local intact = other.parent
+
+				if not (intact and IsHidden[other]) then
+					list1[ni], ni = i, ni - 1
+
+					if intact then
+						list1[i + 1](object, other, Types[other])
+
+						--
+						local list2, nj = Partners[other], -1
+
+						for j in ForEach(list2, object) do
+							list2[nj], nj = j, nj - 1
+
+							list2[j + 1](other, object, otype)
+						end
+
+						RemoveAll(list2)
+					end
 				end
 			end
+
+			RemoveAll(list1)
 		end
 
 		IsHidden[object] = not show
 
 	--
-	else
-		Cleanup(object)
+--	else
+--		Cleanup(object)
 	end
 end
 
