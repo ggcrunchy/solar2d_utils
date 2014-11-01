@@ -38,6 +38,13 @@ local display = display
 -- Corona modules --
 local physics = require("physics")
 
+-- Cached module references --
+local _Border_
+local _FilterBits_
+local _Implements_Pred_
+local _MakeSensor_
+local _SetType_
+
 -- Exports --
 local M = {}
 
@@ -100,14 +107,14 @@ local BorderBody
 
 -- Helper to build up a border
 local function BorderRect (group, x, y, w, h)
-	BorderBody = BorderBody or { filter = { categoryBits = M.FilterBits("border"), maskBits = 0xFFFF } }
+	BorderBody = BorderBody or { filter = { categoryBits = _FilterBits_("border"), maskBits = 0xFFFF } }
 
 	local rect = display.newRect(group, x, y, w, h)
 
 	rect:translate(w / 2, h / 2)
 
-	M.MakeSensor(rect, "static", BorderBody)
-	M.SetType(rect, "border")
+	_MakeSensor_(rect, "static", BorderBody)
+	_SetType_(rect, "border")
 
 	rect.isVisible = false
 end
@@ -141,23 +148,6 @@ function M.Border (group, x, y, w, h, rdim, sep)
 	BorderRect(group, xl, yb, bw, rdim)
 end
 
--- --
-local IsHidden
-
--- --
-local Partners
-
---
-local function Find (list, object)
-	for i = 1, #(list or ""), 2 do
-		if list[i] == object then
-			return i, list
-		end
-	end
-
-	return nil, list
-end
-
 --
 local function FindFrom (list, object, pos)
 	for i = pos, 1, -2 do
@@ -183,64 +173,41 @@ local function ForEach (list, object)
 	return AuxForEach, list, pos and -pos or 0
 end
 
---
-local function RemoveFrom (object, other, index)
-	local list = index and other or Partners[other]
-	local i, n = index or Find(list, object), #list
+-- --
+local IsHidden, Partners
 
-	list[i], list[i + 1] = list[n - 1], list[n]
-	list[n], list[n - 1] = nil
-end
+-- Types used to manage physics interactions --
+local Types = {}
 
 --
-local function Cleanup (object)
-	if not object.parent then
-		local list = Partners[object]
+local function WipeState (event)
+	local object = event.target
 
-		for i = 1, #(list or ""), 2 do
-			RemoveFrom(object, list[i])
-		end
-
-		Partners[object] = nil
+	if IsHidden then
+		IsHidden[object], Partners[object] = nil
 	end
+
+	Types[object] = nil
 end
 
 --
---local function DefAction () end
-
---
-local function WipeList (event)
-	print("BYE!", M.GetType(event.target))
-	Partners[event.target] = nil
+local function Check (object)
+	if IsHidden[object] == nil then
+		object:addEventListener("finalize", WipeState)
+		-- ^^^ BUGGY: only seems to work for manually removeSelf()'d objects, not children :/
+		IsHidden[object] = false
+	end
 end
 
 --
 local function AddToList (object, other, func)
-	--[[
-	local index, list = Find(Partners[object] or {}, other)
-
-	if not index then
-		list[#list + 1] = other
-		list[#list + 1] = func
-	elseif list[index + 1] == DefAction then
-		list[index + 1] = func
-	end]]
-	local list = Partners[object]
-
-	if not list then
-		list = {}
-
-		object:addEventListener("finalize", WipeList)
-	end
+	local list = Partners[object] or {}
 
 	list[#list + 1] = other
 	list[#list + 1] = func
 
 	Partners[object] = list
 end
-
--- Types used to manage physics interactions --
-local Types = setmetatable({}, { __mode = "k" })
 
 --
 local function RemoveAll (list)
@@ -266,37 +233,27 @@ end
 
 --- DOCME
 function M.DoOrDefer (object, other, phase, func)
-	local intact = object.parent and other.parent
--- object ~= other
-	-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
-	-- action; otherwise, perform it immediately.
-	if intact and phase == "began" then
-		if IsHidden[object] or IsHidden[other] then
-			AddToList(object, other, func)
-		--	AddToList(other, object, DefAction)
+	if object ~= other and object.parent and other.parent then
+		-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
+		-- action; otherwise, perform it immediately.
+		if phase == "began" then
+			if IsHidden[object] or IsHidden[other] then
+				Check(object)
+				AddToList(object, other, func)
+			else
+				func(object, other, Types[other])
+			end
+
+		-- Phase "ended", objects intact: break pairings.
 		else
-			func(object, other, Types[other])
+			local list, index = Partners[object], -1
+
+			for pos in ForEach(list, other) do
+				list[index], index = pos, index - 1
+			end
+
+			RemoveAll(list)
 		end
-
-	-- Phase "ended", objects intact: break pairings.
-	elseif intact then
-		local list, index = Partners[object], -1
-	--	local n = #(list or "")
-
-		for pos in ForEach(list, other) do
-			list[index], index = pos, index - 1
-		end
-
-		RemoveAll(list)
-		--[[
-		for i = #(list or "") - 1, 1, -2 do
-			RemoveFrom(object, list[i])
-		end]]
-
-	-- One or both objects dead: break pairings and remove dead objects.
---	elseif not object.parent then
---		Cleanup(object)
---		Cleanup(other)
 	end
 end
 
@@ -350,7 +307,7 @@ function M.Implements (object, what)
 end
 
 --- DOCME
-function M.Implements_Pred (object, what, def, ...)
+function M.Implements_Pred (object, what, ...)
 	local type = Types[object]
 	local implements = adaptive.InSet(Interfaces[type], what)
 
@@ -366,6 +323,20 @@ function M.Implements_Pred (object, what, def, ...)
 	end
 
 	return "does_not_implement"
+end
+
+--- DOCME
+function M.Implements_PredOrDefFail (object, what, ...)
+	local res = _Implements_Pred_(object, what, ...)
+
+	return res ~= "no_predicate" and res or "failed"
+end
+
+--- DOCME
+function M.Implements_PredOrDefPass (object, what, ...)
+	local res = _Implements_Pred_(object, what, ...)
+
+	return res ~= "no_predicate" and res or "passed"
 end
 
 --- Predicate.
@@ -393,6 +364,8 @@ end
 -- @param type Type to assign, or **nil** to untype _object_.
 -- @see AddHandler, GetType
 function M.SetType (object, type)
+	Check(object)
+
 	Types[object] = type
 end
 
@@ -400,21 +373,18 @@ end
 function M.SetVisibility (object, show)
 	--
 	if object.parent then
-		if IsHidden[object] and show then
+		local hide = not show
+
+		--
+		if hide then
+			Check(object)
+
+		--
+		elseif IsHidden[object] then
 			local list1, otype, ni = Partners[object], Types[object], -1
 
 			for i = #(list1 or "") - 1, 1, -2 do
 				local other = list1[i]
---[[
-				if other.parent and not IsHidden[other] then
-					local t2, j, list2 = Types[other], Find(Partners[other], object)
-
-					list1[i + 1](object, other, t2)
-					list2[j + 1](other, object, t1)
-
-					RemoveFrom(nil, list1, i)
-					RemoveFrom(nil, list2, j)
-				end]]
 				local intact = other.parent
 
 				if not (intact and IsHidden[other]) then
@@ -440,11 +410,7 @@ function M.SetVisibility (object, show)
 			RemoveAll(list1)
 		end
 
-		IsHidden[object] = not show
-
-	--
---	else
---		Cleanup(object)
+		IsHidden[object] = hide
 	end
 end
 
@@ -490,11 +456,18 @@ for k, v in pairs{
 	-- Things Loaded --
 	things_loaded = function(level)
 		-- Add a "net" around the level to deal with things that fly away.
-		M.Border(level.things_layer, 0, 0, level.ncols * level.w, level.nrows * level.h, 500, 150)
+		_Border_(level.things_layer, 0, 0, level.ncols * level.w, level.nrows * level.h, 500, 150)
 	end
 } do
 	Runtime:addEventListener(k, v)
 end
+
+-- Cache module members.
+_Border_ = M.Border
+_FilterBits_ = M.FilterBits
+_Implements_Pred_ = M.Implements_Pred
+_MakeSensor_ = M.MakeSensor
+_SetType_ = M.SetType
 
 -- Export the module.
 return M
