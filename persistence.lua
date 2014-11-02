@@ -34,6 +34,7 @@ local type = type
 local pconfig = require("config.Persistence")
 
 -- Corona globals --
+local Runtime = Runtime
 local system = system
 
 -- Corona modules --

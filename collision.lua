@@ -176,6 +176,38 @@ end
 -- --
 local IsHidden, Partners
 
+--
+local function Check (object)
+	if IsHidden[object] == nil then
+		object:addEventListener("finalize", WipeState)
+		-- ^^^ BUGGY: only seems to work for manually removeSelf()'d objects, not children :/
+		IsHidden[object] = false
+	end
+end
+
+--
+local function AddToList (object, other, func)
+	Check(object)
+
+	local list = Partners[object] or {}
+
+	list[#list + 1] = other
+	list[#list + 1] = func
+
+	Partners[object] = list
+end
+
+--
+local function InList (object, other)
+	local list = Partners[object]
+
+	for i = 1, #(list or ""), 2 do
+		if list[i] == other then
+			return true
+		end
+	end
+end
+
 -- Types used to manage physics interactions --
 local Types = {}
 
@@ -188,25 +220,6 @@ local function WipeState (event)
 	end
 
 	Types[object] = nil
-end
-
---
-local function Check (object)
-	if IsHidden[object] == nil then
-		object:addEventListener("finalize", WipeState)
-		-- ^^^ BUGGY: only seems to work for manually removeSelf()'d objects, not children :/
-		IsHidden[object] = false
-	end
-end
-
---
-local function AddToList (object, other, func)
-	local list = Partners[object] or {}
-
-	list[#list + 1] = other
-	list[#list + 1] = func
-
-	Partners[object] = list
 end
 
 --
@@ -231,6 +244,17 @@ local function RemoveAll (list)
 	end
 end
 
+--
+local function RemoveFromList (object, other)
+	local list, index = Partners[object], -1
+
+	for pos in ForEach(list, other) do
+		list[index], index = pos, index - 1
+	end
+
+	RemoveAll(list)
+end
+
 --- DOCME
 function M.DoOrDefer (object, other, phase, func)
 	if object ~= other and object.parent and other.parent then
@@ -238,21 +262,19 @@ function M.DoOrDefer (object, other, phase, func)
 		-- action; otherwise, perform it immediately.
 		if phase == "began" then
 			if IsHidden[object] or IsHidden[other] then
-				Check(object)
 				AddToList(object, other, func)
+
+				if not InList(other, object) then
+					AddToList(other, object, false)
+				end
 			else
-				func(object, other, Types[other])
+				func(object, other, Types[other], true)
 			end
 
 		-- Phase "ended", objects intact: break pairings.
 		else
-			local list, index = Partners[object], -1
-
-			for pos in ForEach(list, other) do
-				list[index], index = pos, index - 1
-			end
-
-			RemoveAll(list)
+			RemoveFromList(object, other)
+			RemoveFromList(other, object)
 		end
 	end
 end
@@ -391,7 +413,11 @@ function M.SetVisibility (object, show)
 					list1[ni], ni = i, ni - 1
 
 					if intact then
-						list1[i + 1](object, other, Types[other])
+						local func = list1[i + 1]
+
+						if func then
+							func(object, other, Types[other], false)
+						end
 
 						--
 						local list2, nj = Partners[other], -1
@@ -399,7 +425,11 @@ function M.SetVisibility (object, show)
 						for j in ForEach(list2, object) do
 							list2[nj], nj = j, nj - 1
 
-							list2[j + 1](other, object, otype)
+							local func2 = list2[j + 1]
+
+							if func2 then
+								func2(other, object, otype, false)
+							end
 						end
 
 						RemoveAll(list2)
