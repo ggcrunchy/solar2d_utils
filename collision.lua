@@ -176,6 +176,20 @@ end
 -- --
 local IsHidden, Partners
 
+-- Types used to manage physics interactions --
+local Types = {}
+
+--
+local function WipeState (event)
+	local object = event.target
+
+	if IsHidden then
+		IsHidden[object], Partners[object] = nil
+	end
+
+	Types[object] = nil
+end
+
 --
 local function Check (object)
 	if IsHidden[object] == nil then
@@ -206,20 +220,6 @@ local function InList (object, other)
 			return true
 		end
 	end
-end
-
--- Types used to manage physics interactions --
-local Types = {}
-
---
-local function WipeState (event)
-	local object = event.target
-
-	if IsHidden then
-		IsHidden[object], Partners[object] = nil
-	end
-
-	Types[object] = nil
 end
 
 --
