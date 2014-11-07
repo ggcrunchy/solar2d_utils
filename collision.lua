@@ -179,6 +179,13 @@ local IsHidden, Partners
 -- Types used to manage physics interactions --
 local Types = {}
 
+--- DOCME
+function M.DoIfVisible (object, other, func)
+	if object ~= other and object.parent and other.parent and not (IsHidden[object] or IsHidden[other]) then
+		func(object, other, Types[other], true)
+	end
+end
+
 --
 local function WipeState (event)
 	local object = event.target
