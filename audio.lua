@@ -31,7 +31,7 @@ local random = math.random
 local type = type
 
 -- Modules --
-local strings = require("tektite_core.var.strings")
+local file = require("corona_utils.file")
 
 -- Corona globals --
 local system = system
@@ -42,33 +42,6 @@ local audio = require("audio")
 
 -- Exports --
 local M = {}
-
---
-local function AddToGroup (info, sounds)
-	--
-	local base, prefix = sounds._base, sounds._prefix or ""
-
-	if #prefix == 0 then
-		prefix = "SFX/"
-	elseif not strings.EndsWith(prefix, "/") then
-		prefix = prefix .. "/"
-	end
-
-	--
-	for k, sinfo in pairs(sounds) do
-		if k ~= "_base" and k ~= "_prefix" then
-			local itype = type(sinfo)
-
-			if itype == "string" then
-				info[k] = { m_file = prefix .. sinfo, m_base = base }
-			else
-				assert(itype == "table", "Non-table sound info")
-
-				info[k] = { m_file = prefix .. sinfo.file, m_base = base, m_wait = sinfo.wait }
-			end
-		end
-	end
-end
 
 -- Common play logic
 local function AuxPlay (group, handles, name)
@@ -149,6 +122,24 @@ local function AuxNewSoundGroup (info)
 	Groups[#Groups + 1] = SoundGroup
 
 	return SoundGroup
+end
+
+--
+local function AddItem (name, sinfo, prefix, base, info)
+	local itype = type(sinfo)
+
+	if itype == "string" then
+		info[name] = { m_file = prefix .. sinfo, m_base = base }
+	else
+		assert(itype == "table", "Non-table sound info")
+
+		info[name] = { m_file = prefix .. sinfo.file, m_base = base, m_wait = sinfo.wait }
+	end
+end
+
+--
+local function AddToGroup (info, sounds)
+	file.Prefix_WithTableDo(sounds, AddItem, info)
 end
 
 --- Builds a new group of sounds. A group is lazy: unless loaded, it only contains some

@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local assert = assert
 local find = string.find
 local gsub = string.gsub
 local ipairs = ipairs
@@ -45,6 +46,7 @@ local sqlite3 = require("sqlite3")
 
 -- Cached module references --
 local _EnumerateFiles_
+local _Prefix_FromTable_
 
 -- Exports --
 local M = {}
@@ -320,6 +322,66 @@ end
 --- DOCME
 M.PathForFile = PathForFile
 
+
+
+
+
+
+--
+local function AddSlash (str)
+	return strings.EndsWith(str, "/") and str or str .. "/"
+end
+
+--
+local function FinalPrefix (prefix)
+	return #prefix > 0 and AddSlash(prefix) or ""
+end
+
+--
+local function ModuleToFolder (mod)
+	return strings.RemoveLastSubstring(mod or "", "%.", "/")
+end
+
+--- DOCME
+function M.Prefix_FromModule (mod)
+	return FinalPrefix(ModuleToFolder(mod))
+end
+
+--- DOCME
+function M.Prefix_FromModuleAndPath (mod, path)
+	mod = ModuleToFolder(mod)
+
+	if #mod > 0 then
+		path = AddSlash(mod) .. path
+	end
+
+	return FinalPrefix(path)
+end
+
+--- DOCME
+function M.Prefix_FromTable (t)
+	local base, mod, prefix = t._base, ModuleToFolder(t._here), t._prefix or ""
+
+	if #mod > 0 then
+		assert(base == nil or base == system.ResourceDirectory, "Mixing modules and non-resource asset paths")
+
+		prefix = AddSlash(mod) .. prefix
+	end
+
+	return FinalPrefix(prefix), base
+end
+
+--- DOCME
+function M.Prefix_WithTableDo (t, func, arg)
+	local prefix, base = _Prefix_FromTable_(t)
+
+	for k, v in pairs(t) do
+		if k ~= "_base" and k ~= "_here" and k ~= "_prefix" then
+			func(k, v, prefix, base, arg)
+		end
+	end
+end
+
 -- ^^ TODO: Assumes path is a directory...
 -- Should ignore non-troublesome extensions
 
@@ -397,6 +459,7 @@ end
 
 -- Cache module members.
 _EnumerateFiles_ = M.EnumerateFiles
+_Prefix_FromTable_ = M.Prefix_FromTable
 
 -- Export the module.
 return M
