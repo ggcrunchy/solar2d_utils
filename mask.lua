@@ -25,7 +25,6 @@
 
 -- Standard library imports --
 local format = string.format
-local open = io.open
 local pairs = pairs
 
 -- Modules --
@@ -49,24 +48,6 @@ local function Extra (n)
 	local odd = padding % 2
 
 	return (padding - odd) / 2, odd
-end
-
--- Reads a 4-byte hex out of a file as an integer
--- TODO: This must be feasible in a more clean way...
-local function HexToNum (file)
-	local sum, mul, str = 0, 2^24, file:read(4)
-
-	for char in str:gmatch(".") do
-		local num = char:byte()
-
-		if num ~= 0 then
-			sum = sum + mul * num
-		end
-
-		mul = mul / 256
-	end
-
-	return sum
 end
 
 --- Generates a rectangular mask, for use with `graphics.setMask`.
@@ -98,27 +79,7 @@ function M.NewMask (w, h, name, base_dir)
 		group:removeSelf()
 	end
 
-	-- In the simulator, figure out the scaling.
-	local xscale, yscale
-
-	if system.getInfo("platformName") == "Win" then
-		xscale, yscale = 2, 1.95 -- If reading the PNG fails, punt...
-
-		local png = open(system.pathForFile(name, base_dir), "rb")
-
-		if png then
-			png:read(12)
-
-			if png:read(4) == "IHDR" then
-				xscale = w / HexToNum(png)
-				yscale = h / HexToNum(png)
-			end
-
-			png:close()
-		end
-	end
-
-	return name, xscale or 1, yscale or 1
+	return name
 end
 
 --- DOCME
@@ -243,11 +204,39 @@ function M.NewReel (dim)
 	end
 end
 
--- TODO: Looks like the above need anchor fixes? (Make some tests)
--- ^^^ Also, display.save() now has those other parameters... maybe this obviates the PNG stuff?
--- Also also, this relies on pairs() being deterministic, which is rather suspect! (store info in database or something...)
+--- DOCME
+-- @pobject object X
+-- @number[opt=object.width] w
+-- @number[opt=object.height] h
+-- See: https://github.com/Lerg/dynamic-masks/blob/master/main.lua
+function M.SetDynamicMask (object, w, h)
+	--
+	display.setDefault("magTextureFilter", "nearest")
+
+	object:setMask(graphics.newMask("corona_utils/assets/mask.png"))
+
+	display.setDefault("magTextureFilter", "linear")
+
+	--
+	w, h = w or object.width, h or object.height
+
+	object.maskScaleX = .5 * w
+	object.maskScaleY = .5 * h
+
+	if object._type == "GroupObject" then
+		object.maskX = object.x + object.maskScaleX
+		object.maskY = object.y + object.maskScaleY
+	else
+		object.maskX = object.x
+		object.maskY = object.y
+	end
+end
+
+-- TODO: Looks like NewMask(), at least, needs anchor fixes? (Make some tests)
+-- ^^^ Also, display.save() has those other parameters to incorporate
+-- Also also, reels more or less assumes deterministic pairs()... which is brittle, to say the least! (needs some metadata)
 -- TODO: More robust if the generator does "line feed"s to not overflow the screen
--- Support for white / black swap on mask generation
+-- TODO: Support for white / black swap on mask generation
 
 -- Export the module.
 return M
