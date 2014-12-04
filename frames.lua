@@ -87,8 +87,10 @@ end
 
 -- "enterFrame" listener --
 Runtime:addEventListener("enterFrame", function(event)
+	local now = event.time
+
 	-- Update the time difference.
-	Diff, Last = Last and (event.time - Last) / 1000 or 0, event.time
+	Diff, Last = Last and (now - Last) / 1000 or 0, now
 
 	-- Invalidate any ID from last frame.
 	FrameID = -abs(FrameID)
