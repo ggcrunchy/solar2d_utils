@@ -50,51 +50,61 @@ local function Extra (n)
 	return (padding - odd) / 2, odd
 end
 
+--
+local function UpperLeftAlign (object, x, y)
+	object.anchorX, object.x = 0, x or 0
+	object.anchorY, object.y = 0, y or 0
+end
+
+--
+local function NewRect (group, x, y, w, h, color)
+	local rect = display.newRect(group, 0, 0, w, h)
+
+	UpperLeftAlign(rect, x, y)
+
+	if color then
+		rect:setFillColor(color)
+	end
+end
+
+-- Helper for black regions of mask texture
+local function BlackRect (group, x, y, w, h)
+	NewRect(group, x, y, w, h, 0)
+end
+
+--
+local function Save (group, name, base_dir)
+	display.save(group, { filename = name, baseDir = base_dir, isFullResolution = true })
+end
+
 --- Generates a rectangular mask, for use with `graphics.setMask`.
 -- @uint w Mask width...
 -- @uint h ...and height.
 -- @param[opt] name File name to assign to mask; if absent, one will be auto-generated.
--- @param[opt=`system.TemporaryDirectory`] base_dir Directory where mask is stored.
+-- @param[opt=`system.CachesDirectory`] base_dir Directory where mask is stored.
 -- @treturn string Mask file name.
 -- @treturn number xscale Scale to apply to mask to fit _w_...
 -- @treturn number yscale ...and to fit _h_.
 function M.NewMask (w, h, name, base_dir)
-	base_dir = base_dir or system.TemporaryDirectory
+	name, base_dir = name and format(name, w, h), base_dir or system.CachesDirectory
 
 	-- If the mask exists, reuse it; otherwise, build it.
 	if not file.Exists(name, base_dir) then
 		local group = display.newGroup()
 		local xpad, ew = Extra(w)
 		local ypad, eh = Extra(h)
-		local border = display.newRect(group, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
 
-		border:setFillColor(0)
-
-		display.newRect(group, xpad, ypad, w + ew, h + eh)
+		BlackRect(group, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
+		NewRect(group, xpad, ypad, w + ew, h + eh)
 
 		name = name or strings.AddExtension(strings.NewName(), "png")
 
-		display.save(group, name, base_dir)
+		Save(group, name, base_dir)
 
 		group:removeSelf()
 	end
 
 	return name
-end
-
---- DOCME
-function M.NewMask_Pattern (patt, w, h, base_dir)
-	return M.NewMask(w, h, strings.AddExtension(format(patt, w, h), "png"), base_dir or system.CachesDirectory)
-end
-
--- Helper for black regions of mask texture
-local function BlackRect (group, x, y, w, h)
-	local rect = display.newRect(group, 0, 0, w, h)
-
-	rect:setFillColor(0)
-
-	rect.anchorX, rect.x = 0, x
-	rect.anchorY, rect.y = 0, y
 end
 
 -- Rounds up to next multiple of 4 (mask dimensions requirement)
@@ -106,7 +116,7 @@ end
 
 --- DOCME
 function M.NewReel (dim)
-	local pos, mask, xscale, yscale, ydim, mgroup, bounds, x, y = {}
+	local pos, back, mask, xscale, yscale, ydim, mgroup, bounds, x, y = {}
 
 	return function(what, arg1, arg2, arg3)
 		-- Set --
@@ -132,8 +142,14 @@ function M.NewReel (dim)
 			-- several containers and capturing all in one go seems to be flaky on the simulator.
 			-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
 			-- ^^^ Then need to start at x = 1... (since black border still needed)
-			bounds, x, y = { xMin = 0, yMin = 0, xMax = dim, yMax = dim }, 0, (ydim - dim) / 2
-			mgroup, xscale, yscale = display.newGroup(), arg1 / dim, arg2 / dim
+			mgroup = display.newGroup()
+
+			local stage = display.getCurrentStage()
+
+			BlackRect(stage, 0, 0, dim, dim)
+
+			back, x, y = stage[stage.numChildren], 0, (ydim - dim) / 2
+			bounds, xscale, yscale = back.contentBounds, arg1 / dim, arg2 / dim
 
 		-- Frame --
 		-- arg1: func
@@ -143,15 +159,10 @@ function M.NewReel (dim)
 			local cgroup, bg = display.newGroup(), arg3 and 1 or 0
 
 			-- Add the left-hand black border.
-			BlackRect(mgroup, x, y, 3, dim)
+		--	BlackRect(mgroup, x, y, 3, dim)
 
 			-- Add the background color, i.e. the component of the frame not defined by the shapes.
-			-- Advance past the black border.
-			local background = display.newRect(cgroup, 0, 0, dim, dim)
-
-			background:setFillColor(bg)
-
-			background.anchorX, background.anchorY, x = 0, 0, x + 3
+			back:setFillColor(bg)
 
 			-- Save the frame's left-hand coordinate.
 			pos[arg2] = x
@@ -165,8 +176,7 @@ function M.NewReel (dim)
 			cgroup:removeSelf()
 			mgroup:insert(capture)
 
-			capture.anchorX, capture.x = 0, x
-			capture.anchorY, capture.y = 0, y
+			UpperLeftAlign(capture, x, y)
 
 			-- Advance past the frame.
 			x = x + dim
@@ -175,6 +185,8 @@ function M.NewReel (dim)
 		-- arg1: Filename
 		-- arg2: Directory (if absent, CachesDirectory)
 		elseif what == "end" then
+			back:removeSelf()
+
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
 			local xdim = NextMult4(x)
@@ -187,7 +199,7 @@ function M.NewReel (dim)
 			local base_dir = arg2 or system.CachesDirectory
 
 			if not file.Exists(arg1, base_dir) then
-				display.save(mgroup, { filename = arg1, baseDir = base_dir, isFullResolution = true })
+				Save(mgroup, arg1, base_dir)
 			end
 
 			display.remove(mgroup)
@@ -232,11 +244,11 @@ function M.SetDynamicMask (object, w, h)
 	end
 end
 
--- TODO: Looks like NewMask(), at least, needs anchor fixes? (Make some tests)
+-- PROBATION: Looks like NewMask(), at least, needs anchor fixes? (Make some tests)
 -- ^^^ Also, display.save() has those other parameters to incorporate
 -- Also also, reels more or less assumes deterministic pairs()... which is brittle, to say the least! (needs some metadata)
 -- TODO: More robust if the generator does "line feed"s to not overflow the screen
--- TODO: Support for white / black swap on mask generation
+-- TODO: Support for white / black swap on mask generation (actually, fine as is... handle on caller end)
 
 -- Export the module.
 return M
