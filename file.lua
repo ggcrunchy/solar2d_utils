@@ -46,6 +46,7 @@ local sqlite3 = require("sqlite3")
 
 -- Cached module references --
 local _EnumerateFiles_
+local _Exists_
 local _Prefix_FromTable_
 
 -- Exports --
@@ -80,6 +81,47 @@ function M.AddDirectory (name, base)
 		lfs.chdir(path)
 		lfs.mkdir(name)
 	end
+end
+
+--- Chooses a Corona base directory for a file. If the file is found under the "preferred"
+-- directory, that one is used; otherwise, **system.ResourceDirectory** is used (**n.b.** the
+-- file may or may not exist, in this case).
+--
+-- This is intended for simulator-side tests. On a device, **system.ResourceDirectory** is
+-- always chosen.
+-- @string name File path.
+-- @[opt=system.ResourceDirectory] pref_base Preferred directory base.
+-- @treturn userdata If chosen, _pref\_base_; otherwise, **system.ResourceDirectory**.
+function M.ChooseBaseDirOfFile (name, pref_base)
+	if OnSimulator and pref_base and _Exists_(name, pref_base) then
+		return pref_base
+	else
+		return system.ResourceDirectory
+	end
+end
+
+--- Variant of @{ChooseBaseDirOfFile} which, in the presence of both versions of a file, will
+-- prefer the directory base of the more recently modified file.
+-- @string name File path.
+-- @[opt=system.ResourceDirectory] pref_base Preferred directory base.
+-- @treturn userdata If chosen, _pref\_base_; otherwise, **system.ResourceDirectory**.
+function M.ChooseBaseDirOfFile_Newer (name, pref_base)
+	local base
+
+	if OnSimulator and pref_base and _Exists_(name, pref_base) then
+		base = pref_base
+
+		if _Exists_(name, system.ResourceDirectory) then
+			local pfile = system.pathForFile(name, pref_base)
+			local rfile = system.pathForFile(name, system.ResourceDirectory)
+
+			if lfs.attributes(pfile, "modification") < lfs.attributes(rfile, "modification") then
+				base = system.ResourceDirectory
+			end
+		end
+	end
+
+	return base or system.ResourceDirectory
 end
 
 --- DOCME
@@ -459,6 +501,7 @@ end
 
 -- Cache module members.
 _EnumerateFiles_ = M.EnumerateFiles
+_Exists_ = M.Exists
 _Prefix_FromTable_ = M.Prefix_FromTable
 
 -- Export the module.
