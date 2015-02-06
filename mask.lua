@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local assert = assert
 local format = string.format
 local pairs = pairs
 
@@ -115,8 +116,27 @@ local function NextMult4 (x)
 end
 
 --- DOCME
-function M.NewReel (dim)
-	local pos, back, mask, xscale, yscale, ydim, mgroup, bounds, x, y = {}
+function M.NewSheet (opts)
+	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
+	local fdimy = opts.dimy or fdimx
+
+	-- Compute the final height, based on the twin requirements of black borders at least 3
+	-- pixels thick and being a multiple of 4.
+	local ydim = NextMult4(fdimy + 6)
+
+	-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
+	-- the height requirement. Bounded captures will be used to grab each frame, since using
+	-- several containers and capturing all in one go seems to be flaky on the simulator.
+	-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
+	-- ^^^ Then need to start at x = 1... (since black border still needed)
+	local mgroup = display.newGroup()
+	local stage = display.getCurrentStage()
+
+	BlackRect(stage, 0, 0, fdimx, fdimy)
+
+	local back, x, y = stage[stage.numChildren], 0, (ydim - fdimy) / 2
+	local bounds, xscale, yscale = back.contentBounds, opts.w / fdimx, opts.h / fdimy
+	local pos, mask = {}
 
 	return function(what, arg1, arg2, arg3)
 		-- Set --
@@ -128,28 +148,6 @@ function M.NewReel (dim)
 			arg1.maskX = pos[arg2] * xscale
 			arg1.maskScaleX = xscale
 			arg1.maskScaleY = yscale
-
-		-- Begin --
-		-- arg1: display width
-		-- arg2: display height
-		elseif what == "begin" then
-			-- Compute the final height, based on the twin requirements of black borders at least 3
-			-- pixels thick and being a multiple of 4.
-			ydim = NextMult4(dim + 6)
-
-			-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
-			-- the height requirement. Bounded captures will be used to grab each frame, since using
-			-- several containers and capturing all in one go seems to be flaky on the simulator.
-			-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
-			-- ^^^ Then need to start at x = 1... (since black border still needed)
-			mgroup = display.newGroup()
-
-			local stage = display.getCurrentStage()
-
-			BlackRect(stage, 0, 0, dim, dim)
-
-			back, x, y = stage[stage.numChildren], 0, (ydim - dim) / 2
-			bounds, xscale, yscale = back.contentBounds, arg1 / dim, arg2 / dim
 
 		-- Frame --
 		-- arg1: func
@@ -168,7 +166,7 @@ function M.NewReel (dim)
 			pos[arg2] = x
 
 			--
-			arg1(cgroup, 1 - bg, dim, arg2)
+			arg1(cgroup, 1 - bg, fdimx, arg2)
 
 			-- Capture the frame and incorporate it into the built-up mask.
 			local capture = display.captureBounds(bounds)
@@ -179,7 +177,7 @@ function M.NewReel (dim)
 			UpperLeftAlign(capture, x, y)
 
 			-- Advance past the frame.
-			x = x + dim
+			x = x + fdimx
 
 		-- End --
 		-- arg1: Filename
@@ -192,8 +190,8 @@ function M.NewReel (dim)
 			local xdim = NextMult4(x)
 
 			BlackRect(mgroup, 0, 0, xdim, y) -- top
-			BlackRect(mgroup, 0, y + dim, xdim, ydim - (y + dim)) -- bottom
-			BlackRect(mgroup, x, y, xdim - x, dim) -- right
+			BlackRect(mgroup, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
+			BlackRect(mgroup, x, y, xdim - x, fdimy) -- right
 
 			-- Save the mask (if it was not already generated).
 			local base_dir = arg2 or system.CachesDirectory
@@ -207,11 +205,14 @@ function M.NewReel (dim)
 			mask, mgroup = graphics.newMask(arg1, base_dir)
 
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
-			local correct = (xdim - dim) / 2
+			local correct = (xdim - fdimx) / 2
 
 			for k, v in pairs(pos) do
 				pos[k] = correct - v
 			end
+
+			-- Figure out scales
+			-- Save stuff?
 		end
 	end
 end
@@ -245,10 +246,8 @@ function M.SetDynamicMask (object, w, h)
 end
 
 -- PROBATION: Looks like NewMask(), at least, needs anchor fixes? (Make some tests)
--- ^^^ Also, display.save() has those other parameters to incorporate
--- Also also, reels more or less assumes deterministic pairs()... which is brittle, to say the least! (needs some metadata)
+-- Also also, sheets more or less assumes deterministic pairs()... which is brittle, to say the least! (needs some metadata)
 -- TODO: More robust if the generator does "line feed"s to not overflow the screen
--- TODO: Support for white / black swap on mask generation (actually, fine as is... handle on caller end)
 
 -- Export the module.
 return M
