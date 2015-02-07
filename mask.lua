@@ -26,7 +26,9 @@
 -- Standard library imports --
 local assert = assert
 local format = string.format
+local remove = os.remove
 local pairs = pairs
+local unpack = unpack
 
 -- Modules --
 local file = require("corona_utils.file")
@@ -36,6 +38,10 @@ local strings = require("tektite_core.var.strings")
 local display = display
 local graphics = graphics
 local system = system
+
+-- Corona modules --
+local json = require("json")
+local sqlite3 = require("sqlite3")
 
 -- Exports --
 local M = {}
@@ -108,6 +114,9 @@ function M.NewMask (w, h, name, base_dir)
 	return name
 end
 
+--
+local function DefYieldFunc () end
+
 -- Rounds up to next multiple of 4 (mask dimensions requirement)
 local function NextMult4 (x)
 	local over = x % 4
@@ -115,10 +124,72 @@ local function NextMult4 (x)
 	return x + (over > 0 and 4 - over or 0)
 end
 
+-- read sources: table (parent, key); database (table, key, is_open); embedded (chunk type, key)
+-- write methods: to table / JSON; to database; to same file
+-- remove: if missing read source
+-- tEXt:
+-- Keyword:        1-79 bytes (character string)
+--   Null separator: 1 byte
+--   Text:           n bytes (character string)
+
+--
+local function IsValidData (opts)
+	local method, arg = opts.method, opts.arg
+
+	-- Read a table directly, or a JSON string --
+	-- arg: Table / string
+	if method == "table" or method == "json" then
+		if method == "json" then
+			arg = json.decode(arg)
+		end
+
+		-- !!
+
+	-- Read a string out of a database (which may be opened) --
+	-- arg: { name / db, table, key }
+	elseif method == "database" or method == "database_handle" then
+		local db, table, key = unpack(arg)
+
+		if method == "database" then
+			db = sqlite3.open(db)
+
+			if not db then
+				return false
+			end
+		end
+
+		-- arg...
+
+		if method == "database" then
+			db:close()
+		end
+
+	-- Read from PNG --
+	else
+		-- FindText(keyword="CoronaMaskData"...
+		-- arg = ...
+	end
+
+	-- Process...
+end
+
 --- DOCME
 function M.NewSheet (opts)
 	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
-	local fdimy = opts.dimy or fdimx
+	local fdimy, w, h = opts.dimy or fdimx, assert(opts.w, "Missing width"), assert(opts.h, "Missing height")
+	local yfunc = opts.yfunc or DefYieldFunc
+
+	-- Source exists?
+	local name, base_dir = assert(opts.filename, "Missing filename"), opts.dir or system.CachesDirectory
+	local exists = file.Exists(name, base_dir)
+
+	if exists and (opts.recreate or not IsValidData(opts)) then
+		assert(base_dir ~= system.ResourceDirectory, "Mask sheet is missing data")
+
+		remove(system.pathForFile(name, base_dir))
+
+		exists = false
+	end
 
 	-- Compute the final height, based on the twin requirements of black borders at least 3
 	-- pixels thick and being a multiple of 4.
@@ -137,24 +208,16 @@ function M.NewSheet (opts)
 	local back, x, y = stage[stage.numChildren], 0, (ydim - fdimy) / 2
 	local bounds, xscale, yscale = back.contentBounds, opts.w / fdimx, opts.h / fdimy
 	local pos, mask = {}
+-- ^^^ Must intelligently handle already existing...
+	-- --
+	local MaskSheet = {}
 
-	return function(what, arg1, arg2, arg3)
-		-- Set --
-		-- arg1: display object
-		-- arg2: frame index
-		if what == "set" then
-			arg1:setMask(mask)
+	if not exists then
+		--- DOCME
+		function MaskSheet:AddFrame (func, index, is_white)
+			assert(not mask, "Mask already created")
 
-			arg1.maskX = pos[arg2] * xscale
-			arg1.maskScaleX = xscale
-			arg1.maskScaleY = yscale
-
-		-- Frame --
-		-- arg1: func
-		-- arg2: frame index
-		-- arg3: boolean (is background white?)
-		elseif what == "frame" then
-			local cgroup, bg = display.newGroup(), arg3 and 1 or 0
+			local cgroup, bg = display.newGroup(), is_white and 1 or 0
 
 			-- Add the left-hand black border.
 		--	BlackRect(mgroup, x, y, 3, dim)
@@ -163,14 +226,14 @@ function M.NewSheet (opts)
 			back:setFillColor(bg)
 
 			-- Save the frame's left-hand coordinate.
-			pos[arg2] = x
+			pos[index] = x
 
 			--
-			arg1(cgroup, 1 - bg, fdimx, arg2)
+			func(cgroup, 1 - bg, fdimx, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
 			local capture = display.captureBounds(bounds)
-
+	-- ^^ If obscured, do long way with sprite sheet?
 			cgroup:removeSelf()
 			mgroup:insert(capture)
 
@@ -179,10 +242,13 @@ function M.NewSheet (opts)
 			-- Advance past the frame.
 			x = x + fdimx
 
-		-- End --
-		-- arg1: Filename
-		-- arg2: Directory (if absent, CachesDirectory)
-		elseif what == "end" then
+			yfunc()
+		end
+
+		--- DOCME
+		function MaskSheet:Commit ()
+			assert(not mask, "Mask already created")
+
 			back:removeSelf()
 
 			-- Compute the final width and use it to add the other edge borders.
@@ -194,15 +260,13 @@ function M.NewSheet (opts)
 			BlackRect(mgroup, x, y, xdim - x, fdimy) -- right
 
 			-- Save the mask (if it was not already generated).
-			local base_dir = arg2 or system.CachesDirectory
-
-			if not file.Exists(arg1, base_dir) then
-				Save(mgroup, arg1, base_dir)
-			end
+	--		if not file.Exists(arg1, base_dir) then
+			Save(mgroup, name, base_dir)
+	--		end
 
 			display.remove(mgroup)
 
-			mask, mgroup = graphics.newMask(arg1, base_dir)
+			mask, mgroup = graphics.newMask(name, base_dir)
 
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
 			local correct = (xdim - fdimx) / 2
@@ -214,7 +278,26 @@ function M.NewSheet (opts)
 			-- Figure out scales
 			-- Save stuff?
 		end
+
+	-- Add dummy methods if mask already existed.
+	else
+		local function Fail ()
+			assert(false, "Mask already created")
+		end
+
+		MaskSheet.AddFrame, MaskSheet.Commit = Fail, Fail
 	end
+
+	--- DOCME
+	function MaskSheet:Set (object, index)
+		object:setMask(assert(mask, "Mask not ready"))
+
+		object.maskX = pos[index] * xscale
+		object.maskScaleX = xscale
+		object.maskScaleY = yscale
+	end
+
+	return MaskSheet
 end
 
 --- DOCME
