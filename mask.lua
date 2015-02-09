@@ -28,11 +28,13 @@ local assert = assert
 local format = string.format
 local remove = os.remove
 local pairs = pairs
+local type = type
 local unpack = unpack
 
 -- Modules --
 local file = require("corona_utils.file")
 local strings = require("tektite_core.var.strings")
+local var_preds = require("tektite_core.var.predicates")
 
 -- Corona globals --
 local display = display
@@ -117,13 +119,6 @@ end
 --
 local function DefYieldFunc () end
 
--- Rounds up to next multiple of 4 (mask dimensions requirement)
-local function NextMult4 (x)
-	local over = x % 4
-
-	return x + (over > 0 and 4 - over or 0)
-end
-
 -- read sources: table (parent, key); database (table, key, is_open); embedded (chunk type, key)
 -- write methods: to table / JSON; to database; to same file
 -- remove: if missing read source
@@ -133,22 +128,25 @@ end
 --   Text:           n bytes (character string)
 
 --
-local function IsValidData (opts)
+local function IsPosInt (var)
+	return var_preds.IsInteger(var) and var > 0
+end
+
+-- Rounds up to next multiple of 4 (mask dimensions requirement)
+local function NextMult4 (x)
+	local over = x % 4
+
+	return x + (over > 0 and 4 - over or 0)
+end
+
+--
+local function ReadData (opts)
 	local method, arg = opts.method, opts.arg
-
-	-- Read a table directly, or a JSON string --
-	-- arg: Table / string
-	if method == "table" or method == "json" then
-		if method == "json" then
-			arg = json.decode(arg)
-		end
-
-		-- !!
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
-	elseif method == "database" or method == "database_handle" then
-		local db, table, key = unpack(arg)
+	if method == "database" or method == "database_handle" then
+		local db, t, key = unpack(arg)
 
 		if method == "database" then
 			db = sqlite3.open(db)
@@ -158,61 +156,118 @@ local function IsValidData (opts)
 			end
 		end
 
-		-- arg...
+		for _, data in db:urows([[SELECT * FROM ]] .. t .. [[ WHERE m_KEY = ']] .. key .. [[';]]) do
+			arg = data
+		end
 
 		if method == "database" then
 			db:close()
 		end
 
 	-- Read from PNG --
-	else
-		-- FindText(keyword="CoronaMaskData"...
+	elseif method == "image_metadata" then
+		-- FindText(keyword) = "CoronaMaskData"...
 		-- arg = ...
 	end
 
-	-- Process...
+	--
+	local atype = type(arg)
+
+	if type(arg) == "string" then
+		arg = json.decode(arg)
+	end
+
+	return type(arg) == "table" -- Is it a table...
+		and IsPosInt(#arg.indices) -- ...does it have indices...
+		and IsPosInt(arg.framew) and IsPosInt(arg.frameh) -- ...and frame dimensions?
+		and arg -- All good: return the data
+end
+
+--
+local function WriteData (opts, pos, fdimx, fdimy)
+	--
+	local data = {}
+
+	-- ...
+
+	data = json.encode(data)
+
+	-- Read a string out of a database (which may be opened) --
+	-- arg: { name / db, table, key }
+	local method = opts.method
+
+	if method == "database" or method == "database_handle" then
+		local db, t, key = unpack(opts.arg)
+
+		if method == "database" then
+			db = sqlite3.open(db)
+		end
+
+		db:exec(
+			[[CREATE TABLE IF NOT EXISTS ]] .. t .. [[ (m_KEY UNIQUE, m_DATA);
+			INSERT OR REPLACE INTO ]] .. t .. [[ VALUES(]] .. key .. [[, ]] .. data .. [[);]]
+		)
+
+		if method == "database" then
+			db:close()
+		end
+
+	-- Read from PNG --
+	elseif method == "image_metadata" then
+		-- FindText(keyword) = "CoronaMaskData"...
+		-- ^^ Add (or update)
+
+	-- Raw string --
+	else
+		opts.arg = data
+	end
 end
 
 --- DOCME
 function M.NewSheet (opts)
 	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
 	local fdimy, w, h = opts.dimy or fdimx, assert(opts.w, "Missing width"), assert(opts.h, "Missing height")
-	local yfunc = opts.yfunc or DefYieldFunc
 
-	-- Source exists?
-	local name, base_dir = assert(opts.filename, "Missing filename"), opts.dir or system.CachesDirectory
-	local exists = file.Exists(name, base_dir)
+	-- ...
+	local name, base_dir = assert(opts.name, "Missing filename"), opts.dir or system.CachesDirectory
+	local filename = ("__%s_%ix%i__.png"):format(name, w, h)
+	local exists = file.Exists(filename, base_dir)
+	local data = exists and not opts.recreate and ReadData(opts)
+	local MaskSheet, pos, mask, xscale, yscale = {}, {}
 
-	if exists and (opts.recreate or not IsValidData(opts)) then
-		assert(base_dir ~= system.ResourceDirectory, "Mask sheet is missing data")
+	--
+	if data then
+		-- pos = ...
+		mask = graphics.newMask(filename, base_dir)
+		-- xscale, yscale
 
-		remove(system.pathForFile(name, base_dir))
+	--
+	else
+		--
+		if exists then
+			assert(base_dir ~= system.ResourceDirectory, "Mask sheet is missing data")
 
-		exists = false
-	end
+			remove(system.pathForFile(filename, base_dir))
+		end
 
-	-- Compute the final height, based on the twin requirements of black borders at least 3
-	-- pixels thick and being a multiple of 4.
-	local ydim = NextMult4(fdimy + 6)
+		-- Compute the final height, based on the twin requirements of black borders at least 3
+		-- pixels thick and being a multiple of 4.
+		local ydim = NextMult4(fdimy + 6) -- <- making wrong assumption that it's one line
 
-	-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
-	-- the height requirement. Bounded captures will be used to grab each frame, since using
-	-- several containers and capturing all in one go seems to be flaky on the simulator.
-	-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
-	-- ^^^ Then need to start at x = 1... (since black border still needed)
-	local mgroup = display.newGroup()
-	local stage = display.getCurrentStage()
+		-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
+		-- the height requirement. Bounded captures will be used to grab each frame, since using
+		-- several containers and capturing all in one go seems to be flaky on the simulator.
+		-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
+		-- ^^^ Then need to start at x = 1... (since black border still needed)
+		local mgroup, stage = display.newGroup(), display.getCurrentStage()
 
-	BlackRect(stage, 0, 0, fdimx, fdimy)
+		BlackRect(stage, 0, 0, fdimx, fdimy)
 
-	local back, x, y = stage[stage.numChildren], 0, (ydim - fdimy) / 2
-	local bounds, xscale, yscale = back.contentBounds, opts.w / fdimx, opts.h / fdimy
-	local pos, mask = {}
--- ^^^ Must intelligently handle already existing...
-	-- --
-	local MaskSheet = {}
+		local back, x, y = stage[stage.numChildren], 0, (ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
+		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
 
-	if not exists then
+		pos = {}
+
 		--- DOCME
 		function MaskSheet:AddFrame (func, index, is_white)
 			assert(not mask, "Mask already created")
@@ -261,12 +316,12 @@ function M.NewSheet (opts)
 
 			-- Save the mask (if it was not already generated).
 	--		if not file.Exists(arg1, base_dir) then
-			Save(mgroup, name, base_dir)
+			Save(mgroup, filename, base_dir)
 	--		end
 
 			display.remove(mgroup)
 
-			mask, mgroup = graphics.newMask(name, base_dir)
+			mask, mgroup = graphics.newMask(filename, base_dir)
 
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
 			local correct = (xdim - fdimx) / 2
@@ -274,7 +329,7 @@ function M.NewSheet (opts)
 			for k, v in pairs(pos) do
 				pos[k] = correct - v
 			end
-
+--opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
 		end
