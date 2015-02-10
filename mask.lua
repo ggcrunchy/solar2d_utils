@@ -26,6 +26,7 @@
 -- Standard library imports --
 local assert = assert
 local format = string.format
+local max = math.max
 local remove = os.remove
 local pairs = pairs
 local type = type
@@ -81,9 +82,24 @@ local function BlackRect (group, x, y, w, h)
 	NewRect(group, x, y, w, h, 0)
 end
 
+-- --
+local SaveParams = { isFullResolution = true }
+
 --
 local function Save (group, name, base_dir)
-	display.save(group, { filename = name, baseDir = base_dir, isFullResolution = true })
+	-- Generate a new name, if none is provided. As a sanity check, verify no such file exists.
+	if not name then
+		repeat
+			name = strings.AddExtension(strings.NewName(), "png")
+		until not file.Exists(name, base_dir)
+	end
+
+	-- Save the group as a PNG. Return the filename, since it may have been auto-generated.
+	SaveParams.filename, SaveParams.baseDir = name, base_dir
+
+	display.save(group, SaveParams)
+
+	return name
 end
 
 --- Generates a rectangular mask, for use with `graphics.setMask`.
@@ -105,15 +121,59 @@ function M.NewMask (w, h, name, base_dir)
 
 		BlackRect(group, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
 		NewRect(group, xpad, ypad, w + ew, h + eh)
-
-		name = name or strings.AddExtension(strings.NewName(), "png")
-
 		Save(group, name, base_dir)
 
 		group:removeSelf()
 	end
 
 	return name
+end
+
+-- --
+local CW, CH = display.contentWidth - 6, display.contentHeight - 6
+
+--
+local function BoundsMatch (b1, b2)
+	return b1.xMin == b2.xMin and b1.yMin == b2.yMin and b1.xMax == b2.xMax and b1.yMax == b2.yMax
+end
+
+--
+local function CaptureBounds (group, bounds, hidden)
+	-- Contents are visible: just capture the bounds directly.
+	if not hidden then
+		return display.captureBounds(bounds)
+	else
+		local gbounds = group.bounds
+
+		-- Obscured, but within bounds: just capture the group.
+		if BoundsMatch(bounds, gbounds) then
+			return display.capture(group)
+
+		-- Out-of-bounds.
+		else
+			-- Move the group fully on screen, detecting too-large cases.
+			local movex, movey = max(0, -gbounds.xMin), max(0, -gbounds.yMin)
+
+			assert(gbounds.xMax + movex <= CW, "Frame too wide to capture!")
+			assert(gbounds.yMax + movey <= CH, "Frame too tall to capture!")
+			-- ^^ Okay?
+
+			-- Save the group to an image and reload it as an image (in the group's parent).
+			group.x, group.y = group.x + movex, group.y + movey
+
+			local name = Save(group, nil, system.TemporaryDirectory)
+			local image = display.newImage(group.parent, name, system.TemporaryDirectory, 0, 0, true)
+
+			image.anchorX, image.x = 0, 0
+			image.anchorY, image.y = 0, 0
+
+			-- Create a one-frame image sheet encompassing the mask frame. Capture and return that.
+			local frame-- = ...
+			image:removeSelf()
+
+			return frame, name
+		end
+	end
 end
 
 --
@@ -180,17 +240,15 @@ end
 
 --
 local function AuxRead (db, tname, filename)
-	local arg
-	
-	-- for _ in db:urows([[SELECT 1 FROM sql_master_table WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
+	local data
 
-		for _, data in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
-			arg = data
+	for _ in db:urows([[SELECT 1 FROM sql_master_table WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
+		for _, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
+			data = v
 		end
+	end
 
-	-- end
-
-	return arg
+	return data
 end
 
 --
@@ -222,10 +280,10 @@ local function ReadData (opts, filename)
 end
 
 --
-local function AuxWrite (db, tname, _, data)
+local function AuxWrite (db, tname, filename, data)
 	db:exec([[
 		CREATE TABLE IF NOT EXISTS ]] .. tname .. [[ (m_KEY UNIQUE, m_DATA);
-		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(]] .. tname .. [[, ]] .. data .. [[);
+		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(]] .. filename .. [[, ]] .. data .. [[);
 	]])
 end
 
@@ -288,13 +346,12 @@ function M.NewSheet (opts)
 
 		local back, x, y = stage[stage.numChildren], 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
 		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
-		local cw, ch = display.contentWidth - 6, display.contentHeight - 6
 		local ncols, nrows, xdim = 0, 0
 
 		--- DOCME
 		function MaskSheet:AddFrame (func, index, is_white)
 			assert(not mask, "Mask already created")
-			assert(y < ch, "No space for new frames")
+			assert(y < CH, "No space for new frames")
 
 			local cgroup, bg = display.newGroup(), is_white and 1 or 0
 
@@ -314,7 +371,7 @@ function M.NewSheet (opts)
 			func(cgroup, 1 - bg, fdimx, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
-			local capture = display.captureBounds(bounds)
+			local capture = display.captureBounds(bounds) -- CaptureBounds(cgroup, bounds, ?)
 	-- ^^ If obscured, do long way with sprite sheet?
 			cgroup:removeSelf()
 			mgroup:insert(capture)
@@ -328,7 +385,7 @@ function M.NewSheet (opts)
 				nrows = nrows + 1
 			end
 
-			if x >= cw then
+			if x >= CW then
 				xdim = xdim or FinalDim(ncols, fdimx)
 
 				ncols, x, y = 0, 0, y + fdimy
