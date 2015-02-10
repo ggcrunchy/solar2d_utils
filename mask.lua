@@ -117,6 +117,17 @@ function M.NewMask (w, h, name, base_dir)
 end
 
 --
+local function ConvertPos (coords, xcorrect, ycorrect)
+	local pos = {}
+
+	for i = 1, #coords, 3 do
+		pos[coords[i]] = { xcorrect - coords[i + 1], ycorrect - coords[i + 2] }
+	end
+
+	return pos
+end
+
+--
 local function DefYieldFunc () end
 
 -- read sources: table (parent, key); database (table, key, is_open); embedded (chunk type, key)
@@ -139,30 +150,57 @@ local function NextMult4 (x)
 	return x + (over > 0 and 4 - over or 0)
 end
 
+-- Compute the final, multiple-of-4 dimension, accounting for the 3-pixel black border
+local function FinalDim (n, dim)
+	return NextMult4(n * dim + (n + 1) * 3) -- 3 between each frame and per side
+end
+
 --
-local function ReadData (opts)
+local function WithDatabase (method, arg, filename, func, data)
+	local db, tname
+
+	if type(arg) == "table" then
+		db, tname = unpack(arg)
+	end
+
+	if method == "database" then
+		db = sqlite3.open(db)
+	end
+
+	tname = tname or "corona_mask_data"
+
+	local res = func(db, tname, filename, data)
+
+	if method == "database" then
+		db:close()
+	end
+
+	return res
+end
+
+--
+local function AuxRead (db, tname, filename)
+	local arg
+	
+	-- for _ in db:urows([[SELECT 1 FROM sql_master_table WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
+
+		for _, data in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
+			arg = data
+		end
+
+	-- end
+
+	return arg
+end
+
+--
+local function ReadData (opts, filename)
 	local method, arg = opts.method, opts.arg
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
 	if method == "database" or method == "database_handle" then
-		local db, t, key = unpack(arg)
-
-		if method == "database" then
-			db = sqlite3.open(db)
-
-			if not db then
-				return false
-			end
-		end
-
-		for _, data in db:urows([[SELECT * FROM ]] .. t .. [[ WHERE m_KEY = ']] .. key .. [[';]]) do
-			arg = data
-		end
-
-		if method == "database" then
-			db:close()
-		end
+		WithDatabase(method, arg, filename, AuxRead)
 
 	-- Read from PNG --
 	elseif method == "image_metadata" then
@@ -178,41 +216,30 @@ local function ReadData (opts)
 	end
 
 	return type(arg) == "table" -- Is it a table...
-		and IsPosInt(#arg.indices) -- ...does it have indices...
-		and IsPosInt(arg.framew) and IsPosInt(arg.frameh) -- ...and frame dimensions?
+		and IsPosInt(#arg.frames) -- ...does it have per-frame data...
+		and IsPosInt(arg.dimx) and IsPosInt(arg.fdimy) -- ...and dimensions?
 		and arg -- All good: return the data
 end
 
 --
-local function WriteData (opts, pos, fdimx, fdimy)
-	--
-	local data = {}
+local function AuxWrite (db, tname, _, data)
+	db:exec([[
+		CREATE TABLE IF NOT EXISTS ]] .. tname .. [[ (m_KEY UNIQUE, m_DATA);
+		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(]] .. tname .. [[, ]] .. data .. [[);
+	]])
+end
 
-	-- ...
-
-	data = json.encode(data)
+--
+local function WriteData (opts, pos, fdimx, fdimy, filename)
+	local data, method = json.encode{ frames = pos, fdimx = fdimx, fdimy = fdimy }, opts.method
 
 	-- Read a string out of a database (which may be opened) --
-	-- arg: { name / db, table, key }
-	local method = opts.method
-
+	-- arg: { name / db, table name (def = "corona_mask_data") } / arg: name / db
 	if method == "database" or method == "database_handle" then
-		local db, t, key = unpack(opts.arg)
-
-		if method == "database" then
-			db = sqlite3.open(db)
-		end
-
-		db:exec(
-			[[CREATE TABLE IF NOT EXISTS ]] .. t .. [[ (m_KEY UNIQUE, m_DATA);
-			INSERT OR REPLACE INTO ]] .. t .. [[ VALUES(]] .. key .. [[, ]] .. data .. [[);]]
-		)
-
-		if method == "database" then
-			db:close()
-		end
+		WithDatabase(method, opts.arg, filename, AuxWrite, data)
 
 	-- Read from PNG --
+	-- arg: { filename, keyword (def = "CoronaMaskData") }
 	elseif method == "image_metadata" then
 		-- FindText(keyword) = "CoronaMaskData"...
 		-- ^^ Add (or update)
@@ -232,27 +259,23 @@ function M.NewSheet (opts)
 	local name, base_dir = assert(opts.name, "Missing filename"), opts.dir or system.CachesDirectory
 	local filename = ("__%s_%ix%i__.png"):format(name, w, h)
 	local exists = file.Exists(filename, base_dir)
-	local data = exists and not opts.recreate and ReadData(opts)
+	local data = exists and not opts.recreate and ReadData(opts, filename)
 	local MaskSheet, pos, mask, xscale, yscale = {}, {}
 
 	--
 	if data then
-		-- pos = ...
+		pos = ConvertPos(data.indices)
 		mask = graphics.newMask(filename, base_dir)
-		-- xscale, yscale
+		-- xscale, yscale = data.framew / ...
 
 	--
 	else
-		--
+		-- If a mask file with the same name exists, remove it.
 		if exists then
 			assert(base_dir ~= system.ResourceDirectory, "Mask sheet is missing data")
 
 			remove(system.pathForFile(filename, base_dir))
 		end
-
-		-- Compute the final height, based on the twin requirements of black borders at least 3
-		-- pixels thick and being a multiple of 4.
-		local ydim = NextMult4(fdimy + 6) -- <- making wrong assumption that it's one line
 
 		-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
 		-- the height requirement. Bounded captures will be used to grab each frame, since using
@@ -263,14 +286,15 @@ function M.NewSheet (opts)
 
 		BlackRect(stage, 0, 0, fdimx, fdimy)
 
-		local back, x, y = stage[stage.numChildren], 0, (ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
+		local back, x, y = stage[stage.numChildren], 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
 		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
-
-		pos = {}
+		local cw, ch = display.contentWidth - 6, display.contentHeight - 6
+		local ncols, nrows, xdim = 0, 0
 
 		--- DOCME
 		function MaskSheet:AddFrame (func, index, is_white)
 			assert(not mask, "Mask already created")
+			assert(y < ch, "No space for new frames")
 
 			local cgroup, bg = display.newGroup(), is_white and 1 or 0
 
@@ -281,7 +305,10 @@ function M.NewSheet (opts)
 			back:setFillColor(bg)
 
 			-- Save the frame's left-hand coordinate.
-			pos[index] = x
+		--	pos[index] = { x, y }
+			pos[#pos + 1] = index
+			pos[#pos + 1] = x
+			pos[#pos + 1] = y
 
 			--
 			func(cgroup, 1 - bg, fdimx, index)
@@ -297,6 +324,18 @@ function M.NewSheet (opts)
 			-- Advance past the frame.
 			x = x + fdimx
 
+			if ncols == 0 then
+				nrows = nrows + 1
+			end
+
+			if x >= cw then
+				xdim = xdim or FinalDim(ncols, fdimx)
+
+				ncols, x, y = 0, 0, y + fdimy
+			else
+				ncols = ncols + 1
+			end
+
 			yfunc()
 		end
 
@@ -308,27 +347,37 @@ function M.NewSheet (opts)
 
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
-			local xdim = NextMult4(x)
+			xdim = xdim or FinalDim(ncols, fdimx)
+
+			local ydim = FinalDim(nrows, fdimy)--NextMult4(fdimy + 6)
 
 			BlackRect(mgroup, 0, 0, xdim, y) -- top
 			BlackRect(mgroup, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
 			BlackRect(mgroup, x, y, xdim - x, fdimy) -- right
-
+-- ^^^ TODO: Rows
 			-- Save the mask (if it was not already generated).
 	--		if not file.Exists(arg1, base_dir) then
 			Save(mgroup, filename, base_dir)
+			WriteData(opts, pos, fdimx, fdimy, filename)
+			-- ^^^ What else?
 	--		end
 
-			display.remove(mgroup)
+			mgroup:removeSelf()
 
 			mask, mgroup = graphics.newMask(filename, base_dir)
 
+			--
+
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
+			--[[
 			local correct = (xdim - fdimx) / 2
 
 			for k, v in pairs(pos) do
 				pos[k] = correct - v
-			end
+			end]]
+			pos = ConvertPos(pos, (xdim - fdimx) / 2, (ydim - fdimy) / 2)
+			-- ^^^ How does this change?
+			-- Does it account for odd sizes?
 --opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
@@ -344,12 +393,19 @@ function M.NewSheet (opts)
 	end
 
 	--- DOCME
+	function MaskSheet:IsLoaded ()
+		return mask ~= nil
+	end
+
+	--- DOCME
 	function MaskSheet:Set (object, index)
 		object:setMask(assert(mask, "Mask not ready"))
 
-		object.maskX = pos[index] * xscale
-		object.maskScaleX = xscale
-		object.maskScaleY = yscale
+		local x, y = unpack(pos[index])
+
+		object.maskX, object.maskScaleX = x * xscale, xscale
+		object.maskY, object.maskScaleY = y * yscale, yscale
+		-- ^^ ceil()?
 	end
 
 	return MaskSheet
