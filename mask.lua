@@ -28,7 +28,7 @@ local assert = assert
 local format = string.format
 local max = math.max
 local remove = os.remove
-local pairs = pairs
+-- local pairs = pairs
 local type = type
 local unpack = unpack
 
@@ -137,6 +137,12 @@ local function BoundsMatch (b1, b2)
 	return b1.xMin == b2.xMin and b1.yMin == b2.yMin and b1.xMax == b2.xMax and b1.yMax == b2.yMax
 end
 
+-- --
+local SheetFrame = {}
+
+-- --
+local Sheet = { frames = { SheetFrame } }
+
 --
 local function CaptureBounds (group, bounds, hidden)
 	-- Contents are visible: just capture the bounds directly.
@@ -149,7 +155,7 @@ local function CaptureBounds (group, bounds, hidden)
 		if BoundsMatch(bounds, gbounds) then
 			return display.capture(group)
 
-		-- Out-of-bounds.
+		-- Out-of-bounds: make an intermediate image and capture that.
 		else
 			-- Move the group fully on screen, detecting too-large cases.
 			local movex, movey = max(0, -gbounds.xMin), max(0, -gbounds.yMin)
@@ -158,33 +164,32 @@ local function CaptureBounds (group, bounds, hidden)
 			assert(gbounds.yMax + movey <= CH, "Frame too tall to capture!")
 			-- ^^ Okay?
 
-			-- Save the group to an image and reload it as an image (in the group's parent).
+			-- Save the group to an image. Create a one-frame image sheet, where the frame is
+			-- positioned over the bounded part of the content, and reload it as an image (in
+			-- the group's parent). Capture and return that. Since the image was temporary,
+			-- return the name to allow for cleanup.
 			group.x, group.y = group.x + movex, group.y + movey
 
 			local name = Save(group, nil, system.TemporaryDirectory)
-			local image = display.newImage(group.parent, name, system.TemporaryDirectory, 0, 0, true)
 
-			image.anchorX, image.x = 0, 0
-			image.anchorY, image.y = 0, 0
+			SheetFrame.x, SheetFrame.y = movex, movey
 
-			-- Create a one-frame image sheet encompassing the mask frame. Capture and return that.
-			local frame-- = ...
-			image:removeSelf()
+			local sheet = graphics.newImageSheet(name, system.TemporaryDirectory, Sheet)
 
-			return frame, name
+			return display.newImage(group.parent, sheet, 1), name
 		end
 	end
 end
 
---
-local function ConvertPos (coords, xcorrect, ycorrect)
-	local pos = {}
+-- Converts an ordered collection of positions into an easier-to-use map
+local function ConvertFrames (arr, xcorrect, ycorrect)
+	local frames = {}
 
-	for i = 1, #coords, 3 do
-		pos[coords[i]] = { xcorrect - coords[i + 1], ycorrect - coords[i + 2] }
+	for i = 1, #arr, 3 do
+		frames[arr[i]] = { xcorrect - arr[i + 1], ycorrect - arr[i + 2] }
 	end
 
-	return pos
+	return frames
 end
 
 --
@@ -267,8 +272,6 @@ local function ReadData (opts, filename)
 	end
 
 	--
-	local atype = type(arg)
-
 	if type(arg) == "string" then
 		arg = json.decode(arg)
 	end
@@ -288,8 +291,8 @@ local function AuxWrite (db, tname, filename, data)
 end
 
 --
-local function WriteData (opts, pos, fdimx, fdimy, filename)
-	local data, method = json.encode{ frames = pos, fdimx = fdimx, fdimy = fdimy }, opts.method
+local function WriteData (opts, frames, fdimx, fdimy, filename)
+	local data, method = json.encode{ frames = frames, fdimx = fdimx, fdimy = fdimy }, opts.method
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table name (def = "corona_mask_data") } / arg: name / db
@@ -318,13 +321,20 @@ function M.NewSheet (opts)
 	local filename = ("__%s_%ix%i__.png"):format(name, w, h)
 	local exists = file.Exists(filename, base_dir)
 	local data = exists and not opts.recreate and ReadData(opts, filename)
-	local MaskSheet, pos, mask, xscale, yscale = {}, {}
+	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
 	--
 	if data then
-		pos = ConvertPos(data.indices)
+		frames = ConvertFrames(data.frames)
 		mask = graphics.newMask(filename, base_dir)
 		-- xscale, yscale = data.framew / ...
+
+		-- Add dummy methods.
+		local function Fail ()
+			assert(false, "Mask already created")
+		end
+
+		MaskSheet.AddFrame, MaskSheet.Commit = Fail, Fail
 
 	--
 	else
@@ -363,14 +373,17 @@ function M.NewSheet (opts)
 
 			-- Save the frame's left-hand coordinate.
 		--	pos[index] = { x, y }
-			pos[#pos + 1] = index
-			pos[#pos + 1] = x
-			pos[#pos + 1] = y
+			frames[#frames + 1] = index
+			frames[#frames + 1] = x
+			frames[#frames + 1] = y
 
 			--
 			func(cgroup, 1 - bg, fdimx, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
+			SheetFrame.width = bounds.xMax - bounds.xMin
+			SheetFrame.height = bounds.yMax - bounds.yMin
+
 			local capture = display.captureBounds(bounds) -- CaptureBounds(cgroup, bounds, ?)
 	-- ^^ If obscured, do long way with sprite sheet?
 			cgroup:removeSelf()
@@ -415,7 +428,7 @@ function M.NewSheet (opts)
 			-- Save the mask (if it was not already generated).
 	--		if not file.Exists(arg1, base_dir) then
 			Save(mgroup, filename, base_dir)
-			WriteData(opts, pos, fdimx, fdimy, filename)
+			WriteData(opts, frames, fdimx, fdimy, filename)
 			-- ^^^ What else?
 	--		end
 
@@ -432,21 +445,13 @@ function M.NewSheet (opts)
 			for k, v in pairs(pos) do
 				pos[k] = correct - v
 			end]]
-			pos = ConvertPos(pos, (xdim - fdimx) / 2, (ydim - fdimy) / 2)
+			frames = ConvertFrames(frames, (xdim - fdimx) / 2, (ydim - fdimy) / 2)
 			-- ^^^ How does this change?
 			-- Does it account for odd sizes?
 --opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
 		end
-
-	-- Add dummy methods if mask already existed.
-	else
-		local function Fail ()
-			assert(false, "Mask already created")
-		end
-
-		MaskSheet.AddFrame, MaskSheet.Commit = Fail, Fail
 	end
 
 	--- DOCME
@@ -458,7 +463,7 @@ function M.NewSheet (opts)
 	function MaskSheet:Set (object, index)
 		object:setMask(assert(mask, "Mask not ready"))
 
-		local x, y = unpack(pos[index])
+		local x, y = unpack(frames[index])
 
 		object.maskX, object.maskScaleX = x * xscale, xscale
 		object.maskY, object.maskScaleY = y * yscale, yscale
