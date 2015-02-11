@@ -312,6 +312,8 @@ local function WriteData (opts, frames, fdimx, fdimy, filename)
 end
 
 --- DOCME
+-- @ptable opts
+-- @treturn MaskSheet MS
 function M.NewSheet (opts)
 	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
 	local fdimy, w, h = opts.dimy or fdimx, assert(opts.w, "Missing width"), assert(opts.h, "Missing height")
@@ -358,8 +360,14 @@ function M.NewSheet (opts)
 		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
 		local ncols, nrows, xdim = 0, 0
 
+		-- hidden: has an "into" group?
+
 		--- DOCME
-		function MaskSheet:AddFrame (func, index, is_white)
+		-- @callable func
+		-- @param index
+		-- @bool is_white
+		-- @callable[opt] after
+		function MaskSheet:AddFrame (func, index, is_white, after)
 			assert(not mask, "Mask already created")
 			assert(y < CH, "No space for new frames")
 
@@ -385,7 +393,11 @@ function M.NewSheet (opts)
 			SheetFrame.height = bounds.yMax - bounds.yMin
 
 			local capture = display.captureBounds(bounds) -- CaptureBounds(cgroup, bounds, ?)
-	-- ^^ If obscured, do long way with sprite sheet?
+
+			if after then
+				after(index)
+			end
+
 			cgroup:removeSelf()
 			mgroup:insert(capture)
 
@@ -455,11 +467,14 @@ function M.NewSheet (opts)
 	end
 
 	--- DOCME
+	-- @treturn boolean S###
 	function MaskSheet:IsLoaded ()
 		return mask ~= nil
 	end
 
 	--- DOCME
+	-- @pobject object
+	-- @param index
 	function MaskSheet:Set (object, index)
 		object:setMask(assert(mask, "Mask not ready"))
 
