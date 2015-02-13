@@ -67,19 +67,31 @@ local function UpperLeftAlign (object, x, y)
 end
 
 --
-local function NewRect (group, x, y, w, h, color)
-	local rect = display.newRect(group, 0, 0, w, h)
+local function NewRect (group, stash, x, y, w, h, color)
+	local n, rect = stash and stash.numChildren or 0
+
+	if n > 0 then
+		rect = stash[n]
+
+		rect.width, rect.height = w, h
+
+		group:insert(rect)
+	else
+		rect = display.newRect(group, 0, 0, w, h)
+	end
 
 	UpperLeftAlign(rect, x, y)
 
 	if color then
 		rect:setFillColor(color)
 	end
+
+	return rect
 end
 
 -- Helper for black regions of mask texture
-local function BlackRect (group, x, y, w, h)
-	NewRect(group, x, y, w, h, 0)
+local function BlackRect (group, stash, x, y, w, h)
+	return NewRect(group, stash, x, y, w, h, 0)
 end
 
 -- --
@@ -119,8 +131,8 @@ function M.NewMask (w, h, name, base_dir)
 		local xpad, ew = Extra(w)
 		local ypad, eh = Extra(h)
 
-		BlackRect(group, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
-		NewRect(group, xpad, ypad, w + ew, h + eh)
+		BlackRect(group, nil, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
+		NewRect(group, nil, xpad, ypad, w + ew, h + eh)
 		Save(group, name, base_dir)
 
 		group:removeSelf()
@@ -149,7 +161,7 @@ local function CaptureBounds (group, bounds, hidden)
 	if not hidden then
 		return display.captureBounds(bounds)
 	else
-		local gbounds = group.bounds
+		local gbounds = group.contentBounds
 
 		-- Obscured, but within bounds: just capture the group.
 		if BoundsMatch(bounds, gbounds) then
@@ -164,15 +176,16 @@ local function CaptureBounds (group, bounds, hidden)
 			assert(gbounds.yMax + movey <= CH, "Frame too tall to capture!")
 			-- ^^ Okay?
 
-			-- Save the group to an image. Create a one-frame image sheet, where the frame is
-			-- positioned over the bounded part of the content, and reload it as an image (in
-			-- the group's parent). Capture and return that. Since the image was temporary,
-			-- return the name to allow for cleanup.
+			-- Save the group to an image.
 			group.x, group.y = group.x + movex, group.y + movey
 
 			local name = Save(group, nil, system.TemporaryDirectory)
 
-			SheetFrame.x, SheetFrame.y = movex, movey
+			-- Create a one-frame image sheet, where the frame is positioned over the bounded part of
+			-- the content. Reload the group as an image (in the group's parent). Capture and return
+			-- that. Since the image was temporary, return the name to allow for cleanup.
+			SheetFrame.x, SheetFrame.width = movex, bounds.xMax - bounds.xMin
+			SheetFrame.y, SheetFrame.height = movey, bounds.yMax - bounds.yMin
 
 			local sheet = graphics.newImageSheet(name, system.TemporaryDirectory, Sheet)
 
@@ -263,7 +276,7 @@ local function ReadData (opts, filename)
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
 	if method == "database" or method == "database_handle" then
-		WithDatabase(method, arg, filename, AuxRead)
+		arg = WithDatabase(method, arg, filename, AuxRead)
 
 	-- Read from PNG --
 	elseif method == "image_metadata" then
@@ -336,7 +349,7 @@ function M.NewSheet (opts)
 			assert(false, "Mask already created")
 		end
 
-		MaskSheet.AddFrame, MaskSheet.Commit = Fail, Fail
+		MaskSheet.AddFrame, MaskSheet.Commit, MaskSheet.GetRect, MaskSheet.StashRect = Fail, Fail, Fail, Fail
 
 	--
 	else
@@ -352,13 +365,21 @@ function M.NewSheet (opts)
 		-- several containers and capturing all in one go seems to be flaky on the simulator.
 		-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
 		-- ^^^ Then need to start at x = 1... (since black border still needed)
-		local mgroup, stage = display.newGroup(), display.getCurrentStage()
+		local mgroup, stash, into = display.newGroup(), display.newGroup(), opts.into
 
-		BlackRect(stage, 0, 0, fdimx, fdimy)
+		stash.isVisible = false
 
-		local back, x, y = stage[stage.numChildren], 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
+		if into then
+			into:insert(mgroup)
+			into:insert(stash)
+		end
+
+		--
+		local back = BlackRect(into or display.getCurrentStage(), nil, 0, 0, fdimx, fdimy)
+
+		local x, y = 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
 		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
-		local ncols, nrows, xdim = 0, 0
+		local ncols, nrows, hidden, xdim = 0, 0, not not opts.hidden
 
 		-- hidden: has an "into" group?
 
@@ -371,7 +392,12 @@ function M.NewSheet (opts)
 			assert(not mask, "Mask already created")
 			assert(y < CH, "No space for new frames")
 
+			--
 			local cgroup, bg = display.newGroup(), is_white and 1 or 0
+
+			if into then
+				into:insert(cgroup)
+			end
 
 			-- Add the left-hand black border.
 		--	BlackRect(mgroup, x, y, 3, dim)
@@ -380,7 +406,6 @@ function M.NewSheet (opts)
 			back:setFillColor(bg)
 
 			-- Save the frame's left-hand coordinate.
-		--	pos[index] = { x, y }
 			frames[#frames + 1] = index
 			frames[#frames + 1] = x
 			frames[#frames + 1] = y
@@ -389,20 +414,17 @@ function M.NewSheet (opts)
 			func(cgroup, 1 - bg, fdimx, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
-			SheetFrame.width = bounds.xMax - bounds.xMin
-			SheetFrame.height = bounds.yMax - bounds.yMin
-
-			local capture = display.captureBounds(bounds) -- CaptureBounds(cgroup, bounds, ?)
+			local capture = CaptureBounds(cgroup, bounds, hidden)
 
 			if after then
-				after(index)
+				after(cgroup, index)
 			end
 
 			cgroup:removeSelf()
 			mgroup:insert(capture)
 
 			UpperLeftAlign(capture, x, y)
-
+-- Black bar on left
 			-- Advance past the frame.
 			x = x + fdimx
 
@@ -412,7 +434,7 @@ function M.NewSheet (opts)
 
 			if x >= CW then
 				xdim = xdim or FinalDim(ncols, fdimx)
-
+-- Black bar above (or do all in commit?)
 				ncols, x, y = 0, 0, y + fdimy
 			else
 				ncols = ncols + 1
@@ -425,28 +447,29 @@ function M.NewSheet (opts)
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
 
-			back:removeSelf()
-
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
 			xdim = xdim or FinalDim(ncols, fdimx)
 
 			local ydim = FinalDim(nrows, fdimy)--NextMult4(fdimy + 6)
-
-			BlackRect(mgroup, 0, 0, xdim, y) -- top
-			BlackRect(mgroup, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
-			BlackRect(mgroup, x, y, xdim - x, fdimy) -- right
+			-- ^^^ These should just extend
+-- Black bar on right, below (also above, if not xdim...)
+			BlackRect(mgroup, stash, 0, 0, xdim, y) -- top
+			BlackRect(mgroup, stash, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
+			BlackRect(mgroup, stash, x, y, xdim - x, fdimy) -- right
 -- ^^^ TODO: Rows
-			-- Save the mask (if it was not already generated).
-	--		if not file.Exists(arg1, base_dir) then
+			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
 			WriteData(opts, frames, fdimx, fdimy, filename)
-			-- ^^^ What else?
-	--		end
 
+			-- Clean up temporary resources and create a mask.
+			back:removeSelf()
 			mgroup:removeSelf()
+			stash:removeSelf()
 
-			mask, mgroup = graphics.newMask(filename, base_dir)
+			back, bounds, into, mgroup, stash, yfunc = nil
+
+			mask = graphics.newMask(filename, base_dir)
 
 			--
 
@@ -463,6 +486,31 @@ function M.NewSheet (opts)
 --opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
+		end
+
+
+		--- DOCME
+		-- @pgroup group
+		-- @number x
+		-- @number y
+		-- @number w
+		-- @number h
+		-- @number[opt] fill
+		-- @treturn DisplayObject X
+		function MaskSheet:GetRect (group, x, y, w, h, fill)
+			assert(not mask, "Mask already created")
+
+			return NewRect(group, stash, x, y, w, h, fill)
+		end
+
+		--- DOCME
+		-- @pobject rect X
+		function MaskSheet:StashRect (rect)
+			if stash then
+				stash:insert(rect)
+			else
+				rect:removeSelf()
+			end
 		end
 	end
 
