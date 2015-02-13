@@ -26,6 +26,7 @@
 -- Standard library imports --
 local assert = assert
 local format = string.format
+local floor = math.floor
 local max = math.max
 local remove = os.remove
 -- local pairs = pairs
@@ -227,12 +228,12 @@ local function NextMult4 (x)
 
 	return x + (over > 0 and 4 - over or 0)
 end
-
+--[[
 -- Compute the final, multiple-of-4 dimension, accounting for the 3-pixel black border
 local function FinalDim (n, dim)
 	return NextMult4(n * dim + (n + 1) * 3) -- 3 between each frame and per side
 end
-
+]]
 --
 local function WithDatabase (method, arg, filename, func, data)
 	local db, tname
@@ -377,11 +378,14 @@ function M.NewSheet (opts)
 		--
 		local back = BlackRect(into or display.getCurrentStage(), nil, 0, 0, fdimx, fdimy)
 
-		local x, y = 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
+--		local x, y = 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
 		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
-		local ncols, nrows, hidden, xdim = 0, 0, not not opts.hidden
+		local ncols, nrows, hidden--[[, xdim]] = 0, 0, not not opts.hidden
+		local x, y, endx = 3, 3
 
-		-- hidden: has an "into" group?
+		local DX, DY = fdimx + 3, fdimy + 3
+		local NCOLS = floor((CW + 3) / DX)
+		local NROWS = floor((CH + 3) / DY)
 
 		--- DOCME
 		-- @callable func
@@ -390,7 +394,7 @@ function M.NewSheet (opts)
 		-- @callable[opt] after
 		function MaskSheet:AddFrame (func, index, is_white, after)
 			assert(not mask, "Mask already created")
-			assert(y < CH, "No space for new frames")
+			assert(nrows < NROWS--[[y < CH]], "No space for new frames")
 
 			--
 			local cgroup, bg = display.newGroup(), is_white and 1 or 0
@@ -411,7 +415,7 @@ function M.NewSheet (opts)
 			frames[#frames + 1] = y
 
 			--
-			func(cgroup, 1 - bg, fdimx, index)
+			func(cgroup, 1 - bg, fdimx, fdimy, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
 			local capture = CaptureBounds(cgroup, bounds, hidden)
@@ -424,20 +428,23 @@ function M.NewSheet (opts)
 			mgroup:insert(capture)
 
 			UpperLeftAlign(capture, x, y)
--- Black bar on left
-			-- Advance past the frame.
-			x = x + fdimx
 
+			-- Advance past the frame.
+		--	x = x + fdimx
+--[[
 			if ncols == 0 then
 				nrows = nrows + 1
 			end
+]]
 
-			if x >= CW then
-				xdim = xdim or FinalDim(ncols, fdimx)
--- Black bar above (or do all in commit?)
-				ncols, x, y = 0, 0, y + fdimy
+			if ncols == NCOLS then--x >= CW then
+			--	xdim = xdim or FinalDim(ncols, fdimx)
+				endx = endx or x + DX
+
+				ncols, nrows, x, y = 0, nrows + 1, 3, y + DY
+				-- Black rect above: y - 3
 			else
-				ncols = ncols + 1
+				ncols, x = ncols + 1, x + DX
 			end
 
 			yfunc()
@@ -447,6 +454,10 @@ function M.NewSheet (opts)
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
 
+			--
+			local XDIM = NextMult4(endx or x)
+			local YDIM = NextMult4(y + (ncols > 0 and DY or 0))
+--[[
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
 			xdim = xdim or FinalDim(ncols, fdimx)
@@ -457,7 +468,12 @@ function M.NewSheet (opts)
 			BlackRect(mgroup, stash, 0, 0, xdim, y) -- top
 			BlackRect(mgroup, stash, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
 			BlackRect(mgroup, stash, x, y, xdim - x, fdimy) -- right
+			]]
+			local background = BlackRect(mgroup, stash, 0, 0, XDIM, YDIM)
+
+			background:toBack()
 -- ^^^ TODO: Rows
+-- One big one, put it in back
 			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
 			WriteData(opts, frames, fdimx, fdimy, filename)
@@ -475,19 +491,22 @@ function M.NewSheet (opts)
 
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
 			--[[
-			local correct = (xdim - fdimx) / 2
+			local XHALF, YHALF = XDIM / 2, YDIM / 2
+			local xcorr, ycorr = floor(fdimx / 2), floor(fdimy / 2)
+			local correct = (xdim - fdimx) / 2 <- Add 1?
+			-- xcorrect - arr[i + 1], ycorrect - arr[i + 2]
 
 			for k, v in pairs(pos) do
 				pos[k] = correct - v
 			end]]
-			frames = ConvertFrames(frames, (xdim - fdimx) / 2, (ydim - fdimy) / 2)
+		--	frames = ConvertFrames(frames, XHALF - xcorr, YHALF - ycorr)
+			-- ^^^ ????
 			-- ^^^ How does this change?
 			-- Does it account for odd sizes?
 --opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
 		end
-
 
 		--- DOCME
 		-- @pgroup group
