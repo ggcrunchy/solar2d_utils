@@ -195,17 +195,6 @@ local function CaptureBounds (group, bounds, hidden)
 	end
 end
 
--- Converts an ordered collection of positions into an easier-to-use map
-local function ConvertFrames (arr, xcorrect, ycorrect)
-	local frames = {}
-
-	for i = 1, #arr, 3 do
-		frames[arr[i]] = { xcorrect - arr[i + 1], ycorrect - arr[i + 2] }
-	end
-
-	return frames
-end
-
 --
 local function DefYieldFunc () end
 
@@ -227,6 +216,17 @@ local function NextMult4 (x)
 	local over = x % 4
 
 	return x + (over > 0 and 4 - over or 0)
+end
+
+-- Converts an ordered collection of positions into an easier-to-use map
+local function ToFrameMap (arr)
+	local frames = {}
+
+	for i = 1, #arr, 3 do
+		frames[arr[i]] = { arr[i + 1], arr[i + 2] }
+	end
+
+	return frames
 end
 --[[
 -- Compute the final, multiple-of-4 dimension, accounting for the 3-pixel black border
@@ -291,8 +291,9 @@ local function ReadData (opts, filename)
 	end
 
 	return type(arg) == "table" -- Is it a table...
-		and IsPosInt(#arg.frames) -- ...does it have per-frame data...
-		and IsPosInt(arg.dimx) and IsPosInt(arg.fdimy) -- ...and dimensions?
+		and type(arg.frames) == "table" and IsPosInt(#arg.frames) -- ...does it have per-frame data...
+		and IsPosInt(arg.fdimx) and IsPosInt(arg.fdimy) -- ...and frame dimensions...
+		and IsPosInt(arg.w) and arg.w > arg.fdimx and IsPosInt(arg.h) and arg.h > arg.fdimy -- ...and valid image dimensions?
 		and arg -- All good: return the data
 end
 
@@ -305,8 +306,19 @@ local function AuxWrite (db, tname, filename, data)
 end
 
 --
-local function WriteData (opts, frames, fdimx, fdimy, filename)
-	local data, method = json.encode{ frames = frames, fdimx = fdimx, fdimy = fdimy }, opts.method
+local function WriteData (opts, frames, fdimx, fdimy, w, h, filename)
+	-- Correct the mask coordinates to refer to frame centers, relative to the mask center.
+	local xcorr = floor((w - fdimx + 1) / 2)
+	local ycorr = floor((h - fdimy + 1) / 2)
+
+	for i = 2, #frames, 3 do
+		frames[i], frames[i + 1] = xcorr - frames[i], ycorr - frames[i + 1]
+	end
+
+	--
+	local data, method = json.encode{
+		frames = frames, fdimx = fdimx, fdimy = fdimy, w = w, h = h
+	}, opts.method
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table name (def = "corona_mask_data") } / arg: name / db
@@ -325,25 +337,60 @@ local function WriteData (opts, frames, fdimx, fdimy, filename)
 	end
 end
 
+-- --
+local Desc = { name = "filename", pixw = "pixel width", pixh = "pixel height", ncols = "column count", nrows = "row count" }
+
+--
+local function AssertGet (opts, key)
+	local v = opts[key]
+
+	if not v then
+		assert(false, "Missing " .. Desc[key])
+	end
+
+	return v
+end
+
+--
+local function AssertDim (opts, dim, pixdim, count)
+	return opts[dim] or AssertGet(opts, pixdim) * AssertGet(opts, count)
+end
+
+--
+local function AuxNewSheet (opts)
+	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
+	local w = AssertDim(opts, "w", "pixw", "ncols")
+	local h = AssertDim(opts, "h", "pixh", "nrows")
+
+	return fdimx, opts.dimy or fdimx, ("__%s_%ix%i__.png"):format(AssertGet(opts, "name"), w, h)
+end
+
+--
+local function GetCounts (fdimx, fdimy)
+	local dx, dy = fdimx + 3, fdimy + 3
+
+	return floor((CW + 3) / dx), floor((CH + 3) / dy), dx, dy
+end
+
+--
+local function GetScales (fdimx, fdimy, w, h)
+	-- (fdimx - 6) / (w - 6)??
+end
+
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
 function M.NewSheet (opts)
-	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
-	local fdimy, w, h = opts.dimy or fdimx, assert(opts.w, "Missing width"), assert(opts.h, "Missing height")
-
-	-- ...
-	local name, base_dir = assert(opts.name, "Missing filename"), opts.dir or system.CachesDirectory
-	local filename = ("__%s_%ix%i__.png"):format(name, w, h)
+	local fdimx, fdimy, filename = AuxNewSheet(opts)
+	local base_dir = opts.dir or system.CachesDirectory
 	local exists = file.Exists(filename, base_dir)
 	local data = exists and not opts.recreate and ReadData(opts, filename)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
 	--
 	if data then
-		frames = ConvertFrames(data.frames)
-		mask = graphics.newMask(filename, base_dir)
-		-- xscale, yscale = data.framew / ...
+		mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(data.frames)
+		xscale, yscale = GetScales(data.fdimx, data.fdimy, data.w, data.h)
 
 		-- Add dummy methods.
 		local function Fail ()
@@ -379,13 +426,9 @@ function M.NewSheet (opts)
 		local back = BlackRect(into or display.getCurrentStage(), nil, 0, 0, fdimx, fdimy)
 
 --		local x, y = 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
-		local bounds, yfunc = back.contentBounds, opts.yfunc or DefYieldFunc
-		local ncols, nrows, hidden--[[, xdim]] = 0, 0, not not opts.hidden
-		local x, y, endx = 3, 3
-
-		local DX, DY = fdimx + 3, fdimy + 3
-		local NCOLS = floor((CW + 3) / DX)
-		local NROWS = floor((CH + 3) / DY)
+		local bounds, yfunc, hidden = back.contentBounds, opts.yfunc or DefYieldFunc, not not opts.hidden
+		local cols_done, rows_done, x, y, endx--[[, xdim]] = 0, 0, 3, 3
+		local ncols, nrows, dx, dy = GetCounts(fdimx, fdimy)
 
 		--- DOCME
 		-- @callable func
@@ -394,7 +437,7 @@ function M.NewSheet (opts)
 		-- @callable[opt] after
 		function MaskSheet:AddFrame (func, index, is_white, after)
 			assert(not mask, "Mask already created")
-			assert(nrows < NROWS--[[y < CH]], "No space for new frames")
+			assert(rows_done < nrows--[[y < CH]], "No space for new frames")
 
 			--
 			local cgroup, bg = display.newGroup(), is_white and 1 or 0
@@ -436,15 +479,13 @@ function M.NewSheet (opts)
 				nrows = nrows + 1
 			end
 ]]
-
-			if ncols == NCOLS then--x >= CW then
+			if cols_done == ncols then--x >= CW then
 			--	xdim = xdim or FinalDim(ncols, fdimx)
-				endx = endx or x + DX
-
-				ncols, nrows, x, y = 0, nrows + 1, 3, y + DY
+				cols_done, endx = 0, endx or x + dx
+				rows_done, x, y = rows_done + 1, 3, y + dy
 				-- Black rect above: y - 3
 			else
-				ncols, x = ncols + 1, x + DX
+				cols_done, x = cols_done + 1, x + dx
 			end
 
 			yfunc()
@@ -455,8 +496,7 @@ function M.NewSheet (opts)
 			assert(not mask, "Mask already created")
 
 			--
-			local XDIM = NextMult4(endx or x)
-			local YDIM = NextMult4(y + (ncols > 0 and DY or 0))
+			local xdim, ydim = NextMult4(endx or x), NextMult4(y + (ncols > 0 and dy or 0))
 --[[
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
@@ -469,25 +509,34 @@ function M.NewSheet (opts)
 			BlackRect(mgroup, stash, 0, y + fdimy, xdim, ydim - (y + fdimy)) -- bottom
 			BlackRect(mgroup, stash, x, y, xdim - x, fdimy) -- right
 			]]
-			local background = BlackRect(mgroup, stash, 0, 0, XDIM, YDIM)
+			local background = BlackRect(mgroup, stash, 0, 0, xdim, ydim)
 
 			background:toBack()
 -- ^^^ TODO: Rows
 -- One big one, put it in back
+--[[
+			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
+			local xcorr = floor((XDIM - fdimx + 1) / 2)
+			local ycorr = floor((YDIM - fdimy + 1) / 2)
+
+			for i = 2, #frames, 3 do
+				frames[i], frames[i + 1] = xcorr - frames[i], ycorr - frames[i + 1]
+			end
+]]
 			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
-			WriteData(opts, frames, fdimx, fdimy, filename)
+			WriteData(opts, frames, fdimx, fdimy, xdim, ydim, filename)
 
-			-- Clean up temporary resources and create a mask.
+			-- Clean up temporary resources.
 			back:removeSelf()
 			mgroup:removeSelf()
 			stash:removeSelf()
 
 			back, bounds, into, mgroup, stash, yfunc = nil
 
-			mask = graphics.newMask(filename, base_dir)
-
-			--
+			-- Create a mask with final frames.
+			mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(frames)
+			xscale, yscale = GetScales(fdimx, fdimy, xdim, ydim)
 
 			-- Correct the mask coordinates to refer to the frame centers, relative to the mask center.
 			--[[
@@ -550,6 +599,63 @@ function M.NewSheet (opts)
 		object.maskX, object.maskScaleX = x * xscale, xscale
 		object.maskY, object.maskScaleY = y * yscale, yscale
 		-- ^^ ceil()?
+	end
+
+	return MaskSheet
+end
+
+--- DOCME
+-- @ptable opts
+-- @treturn MaskSheet MS
+function M.NewSheet_Data (opts)
+	local fdimx, fdimy, filename = AuxNewSheet(opts)
+	local MaskSheet, frames = {}, {}
+
+	-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
+	-- the height requirement. Bounded captures will be used to grab each frame, since using
+	-- several containers and capturing all in one go seems to be flaky on the simulator.
+	-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
+	-- ^^^ Then need to start at x = 1... (since black border still needed)
+
+	local yfunc = opts.yfunc or DefYieldFunc
+	local cols_done, rows_done, x, y, endx = 0, 0, 3, 3
+	local ncols, nrows, dx, dy = GetCounts(fdimx, fdimy)
+
+	--- DOCME
+	-- @param index
+	function MaskSheet:AddFrame (index)
+		assert(frames, "Data already created")
+		assert(rows_done < nrows, "No space for new frames")
+
+		-- Save the frame's left-hand coordinate.
+		frames[#frames + 1] = index
+		frames[#frames + 1] = x
+		frames[#frames + 1] = y
+
+		--
+		if cols_done == ncols then
+			cols_done, endx = 0, endx or x + dx
+			rows_done, x, y = rows_done + 1, 3, y + dy
+		else
+			cols_done, x = cols_done + 1, x + dx
+		end
+
+		yfunc()
+	end
+
+	--- DOCME
+	function MaskSheet:Commit ()
+		assert(frames, "Data already created")
+
+		WriteData(opts, frames, fdimx, fdimy, NextMult4(endx or x), NextMult4(y + (ncols > 0 and dy or 0)), filename)
+
+		frames, yfunc = nil
+	end
+
+	--- DOCME
+	-- @treturn boolean S###
+	function MaskSheet:IsLoaded ()
+		return frames == nil
 	end
 
 	return MaskSheet
