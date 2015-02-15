@@ -30,6 +30,7 @@ local floor = math.floor
 local max = math.max
 local remove = os.remove
 -- local pairs = pairs
+local tostring = tostring
 local type = type
 local unpack = unpack
 
@@ -306,24 +307,22 @@ local function AuxWrite (db, tname, filename, data)
 end
 
 --
-local function WriteData (opts, frames, fdimx, fdimy, w, h, filename)
+local function WriteData (method, arg, frames, fdimx, fdimy, xdim, ydim, filename)
 	-- Correct the mask coordinates to refer to frame centers, relative to the mask center.
-	local xcorr = floor((w - fdimx + 1) / 2)
-	local ycorr = floor((h - fdimy + 1) / 2)
+	local xcorr = floor((xdim - fdimx + 1) / 2)
+	local ycorr = floor((ydim - fdimy + 1) / 2)
 
 	for i = 2, #frames, 3 do
 		frames[i], frames[i + 1] = xcorr - frames[i], ycorr - frames[i + 1]
 	end
 
 	--
-	local data, method = json.encode{
-		frames = frames, fdimx = fdimx, fdimy = fdimy, w = w, h = h
-	}, opts.method
+	local data = json.encode{ frames = frames, xdim = xdim, ydim = ydim }
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table name (def = "corona_mask_data") } / arg: name / db
 	if method == "database" or method == "database_handle" then
-		WithDatabase(method, opts.arg, filename, AuxWrite, data)
+		WithDatabase(method, arg, filename, AuxWrite, data)
 
 	-- Read from PNG --
 	-- arg: { filename, keyword (def = "CoronaMaskData") }
@@ -333,36 +332,44 @@ local function WriteData (opts, frames, fdimx, fdimy, w, h, filename)
 
 	-- Raw string --
 	else
-		opts.arg = data
-	end
-end
-
--- --
-local Desc = { name = "filename", pixw = "pixel width", pixh = "pixel height", ncols = "column count", nrows = "row count" }
-
---
-local function AssertGet (opts, key)
-	local v = opts[key]
-
-	if not v then
-		assert(false, "Missing " .. Desc[key])
+		arg = data
 	end
 
-	return v
+	return arg
 end
 
 --
-local function AssertDim (opts, dim, pixdim, count)
-	return opts[dim] or AssertGet(opts, pixdim) * AssertGet(opts, count)
+local function GetPixInt (opts, name1, name2, message)
+	local int = opts[name1] or opts[name2]
+
+	if not IsPosInt(int) then
+		assert(false, "Missing pixel " .. message)
+	end
+
+	return int
+end
+
+--
+local function GetDim (opts, fdim, dim_name, npix_name, message1, message2)
+	if fdim then
+		return fdim, ("%i"):format(fdim)
+	else
+		local pix_dim = GetPixInt(opts, dim_name, "pix_dim", message1)
+		local npix = GetPixInt(opts, npix_name, "npix", message2)
+
+		return pix_dim * npix, ("%ip%i"):format(pix_dim, npix)
+	end
 end
 
 --
 local function AuxNewSheet (opts)
-	local fdimx = assert(opts and (opts.dimx or opts.dim), "Missing frame dimension")
-	local w = AssertDim(opts, "w", "pixw", "ncols")
-	local h = AssertDim(opts, "h", "pixh", "nrows")
+	assert(opts, "Missing options")
 
-	return fdimx, opts.dimy or fdimx, ("__%s_%ix%i__.png"):format(AssertGet(opts, "name"), w, h)
+	local fdimx, xstr = GetDim(opts, opts.dimx or opts.dim, "pixw", "npix_cols", "width", "column count")
+	local fdimy, ystr = GetDim(opts, fdimx or opts.fdimy, "pixh", "npix_rows", "height", "row count")
+	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
+
+	return fdimx, fdimy, ("__%s_%sx%s%s__.png"):format(name, xstr, ystr, id), opts.method, opts.arg
 end
 
 --
@@ -370,6 +377,11 @@ local function GetCounts (fdimx, fdimy)
 	local dx, dy = fdimx + 3, fdimy + 3
 
 	return floor((CW + 3) / dx), floor((CH + 3) / dy), dx, dy
+end
+
+--
+local function GetDims (x, y, endx, ncols, dy)
+	return NextMult4(endx or x), NextMult4(y + (ncols > 0 and dy or 0))
 end
 
 --
@@ -381,7 +393,7 @@ end
 -- @ptable opts
 -- @treturn MaskSheet MS
 function M.NewSheet (opts)
-	local fdimx, fdimy, filename = AuxNewSheet(opts)
+	local fdimx, fdimy, filename, method, arg = AuxNewSheet(opts)
 	local base_dir = opts.dir or system.CachesDirectory
 	local exists = file.Exists(filename, base_dir)
 	local data = exists and not opts.recreate and ReadData(opts, filename)
@@ -390,7 +402,7 @@ function M.NewSheet (opts)
 	--
 	if data then
 		mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(data.frames)
-		xscale, yscale = GetScales(data.fdimx, data.fdimy, data.w, data.h)
+		xscale, yscale = GetScales(fdimx, fdimy, data.xdim, data.ydim)
 
 		-- Add dummy methods.
 		local function Fail ()
@@ -492,11 +504,12 @@ function M.NewSheet (opts)
 		end
 
 		--- DOCME
+		-- @return ARG
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
 
 			--
-			local xdim, ydim = NextMult4(endx or x), NextMult4(y + (ncols > 0 and dy or 0))
+			local xdim, ydim = GetDims(x, y, endx, ncols, dy)
 --[[
 			-- Compute the final width and use it to add the other edge borders.
 			-- TODO: Recenter the frames?
@@ -525,7 +538,8 @@ function M.NewSheet (opts)
 ]]
 			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
-			WriteData(opts, frames, fdimx, fdimy, xdim, ydim, filename)
+
+			arg = WriteData(method, arg, frames, fdimx, fdimy, xdim, ydim, filename)
 
 			-- Clean up temporary resources.
 			back:removeSelf()
@@ -555,6 +569,7 @@ function M.NewSheet (opts)
 --opts.w / fdimx, opts.h / fdimy
 			-- Figure out scales
 			-- Save stuff?
+			return arg
 		end
 
 		--- DOCME
@@ -608,7 +623,7 @@ end
 -- @ptable opts
 -- @treturn MaskSheet MS
 function M.NewSheet_Data (opts)
-	local fdimx, fdimy, filename = AuxNewSheet(opts)
+	local fdimx, fdimy, filename, method, arg = AuxNewSheet(opts)
 	local MaskSheet, frames = {}, {}
 
 	-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
@@ -644,12 +659,16 @@ function M.NewSheet_Data (opts)
 	end
 
 	--- DOCME
+	-- @return ARG
 	function MaskSheet:Commit ()
 		assert(frames, "Data already created")
 
-		WriteData(opts, frames, fdimx, fdimy, NextMult4(endx or x), NextMult4(y + (ncols > 0 and dy or 0)), filename)
+		local xdim, ydim = GetDims(x, y, endx, ncols, dy)
 
+		arg = WriteData(method, arg, frames, fdimx, fdimy, xdim, ydim, filename)
 		frames, yfunc = nil
+
+		return arg
 	end
 
 	--- DOCME
