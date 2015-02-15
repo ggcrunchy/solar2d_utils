@@ -147,8 +147,8 @@ end
 local CW, CH = display.contentWidth - 6, display.contentHeight - 6
 
 --
-local function BoundsMatch (b1, b2)
-	return b1.xMin == b2.xMin and b1.yMin == b2.yMin and b1.xMax == b2.xMax and b1.yMax == b2.yMax
+local function InBounds (bounds, gbounds)
+	return gbounds.xMin >= 0 and gbounds.yMin >= 0 and gbounds.xMax <= bounds.xMax and gbounds.yMax <= bounds.yMax
 end
 
 -- --
@@ -158,7 +158,7 @@ local SheetFrame = {}
 local Sheet = { frames = { SheetFrame } }
 
 --
-local function CaptureBounds (group, bounds, hidden)
+local function CaptureBounds (group, bounds, hidden, yfunc)
 	-- Contents are visible: just capture the bounds directly.
 	if not hidden then
 		return display.captureBounds(bounds)
@@ -166,7 +166,7 @@ local function CaptureBounds (group, bounds, hidden)
 		local gbounds = group.contentBounds
 
 		-- Obscured, but within bounds: just capture the group.
-		if BoundsMatch(bounds, gbounds) then
+		if InBounds(bounds, gbounds) then
 			return display.capture(group)
 
 		-- Out-of-bounds: make an intermediate image and capture that.
@@ -182,6 +182,9 @@ local function CaptureBounds (group, bounds, hidden)
 			group.x, group.y = group.x + movex, group.y + movey
 
 			local name = Save(group, nil, system.TemporaryDirectory)
+
+			--
+			yfunc()
 
 			-- Create a one-frame image sheet, where the frame is positioned over the bounded part of
 			-- the content. Reload the group as an image (in the group's parent). Capture and return
@@ -294,7 +297,7 @@ local function ReadData (opts, filename)
 	return type(arg) == "table" -- Is it a table...
 		and type(arg.frames) == "table" and IsPosInt(#arg.frames) -- ...does it have per-frame data...
 		and IsPosInt(arg.fdimx) and IsPosInt(arg.fdimy) -- ...and frame dimensions...
-		and IsPosInt(arg.w) and arg.w > arg.fdimx and IsPosInt(arg.h) and arg.h > arg.fdimy -- ...and valid image dimensions?
+		and IsPosInt(arg.xdim) and arg.xdim > arg.fdimx and IsPosInt(arg.ydim) and arg.ydim > arg.fdimy -- ...and valid image dimensions?
 		and arg -- All good: return the data
 end
 
@@ -425,17 +428,16 @@ function M.NewSheet (opts)
 		-- several containers and capturing all in one go seems to be flaky on the simulator.
 		-- TODO: Capture extra pixel in each direction, to improve filtering? (not perfect with circles...)
 		-- ^^^ Then need to start at x = 1... (since black border still needed)
-		local mgroup, stash, into = display.newGroup(), display.newGroup(), opts.into
+		local back, into = BlackRect(display.getCurrentStage(), nil, 0, 0, fdimx, fdimy), opts.into
+		local mgroup, stash = display.newGroup(), display.newGroup()
 
 		stash.isVisible = false
 
 		if into then
+			into:insert(back)
 			into:insert(mgroup)
 			into:insert(stash)
 		end
-
-		--
-		local back = BlackRect(into or display.getCurrentStage(), nil, 0, 0, fdimx, fdimy)
 
 --		local x, y = 0, 0 --(ydim - fdimy) / 2 -- <- ydim WILL be even, check fdimy
 		local bounds, yfunc, hidden = back.contentBounds, opts.yfunc or DefYieldFunc, not not opts.hidden
@@ -473,14 +475,28 @@ function M.NewSheet (opts)
 			func(cgroup, 1 - bg, fdimx, fdimy, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
-			local capture = CaptureBounds(cgroup, bounds, hidden)
+			local capture, name = CaptureBounds(cgroup, bounds, hidden, yfunc)
 
+			if name then
+				-- Track names for cleanup
+			end
+
+			--[[
+AAA=(AAA or 0)+1
+if AAA==27 then
+Ggg[3]=7
+end
+--]]
+			mgroup:insert(capture)
+
+			yfunc()
+
+			--
 			if after then
 				after(cgroup, index)
 			end
 
 			cgroup:removeSelf()
-			mgroup:insert(capture)
 
 			UpperLeftAlign(capture, x, y)
 
@@ -499,8 +515,6 @@ function M.NewSheet (opts)
 			else
 				cols_done, x = cols_done + 1, x + dx
 			end
-
-			yfunc()
 		end
 
 		--- DOCME
@@ -648,14 +662,15 @@ function M.NewSheet_Data (opts)
 		frames[#frames + 1] = y
 
 		--
+		yfunc()
+
+		--
 		if cols_done == ncols then
 			cols_done, endx = 0, endx or x + dx
 			rows_done, x, y = rows_done + 1, 3, y + dy
 		else
 			cols_done, x = cols_done + 1, x + dx
 		end
-
-		yfunc()
 	end
 
 	--- DOCME
