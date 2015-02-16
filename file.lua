@@ -28,8 +28,10 @@ local assert = assert
 local find = string.find
 local gsub = string.gsub
 local ipairs = ipairs
+local max = math.max
 local open = io.open
 local pairs = pairs
+local remove = os.remove
 local sub = string.sub
 local type = type
 
@@ -405,7 +407,7 @@ function M.Prefix_FromTable (t)
 	local base, mod, prefix = t._base, ModuleToFolder(t._here), t._prefix or ""
 
 	if #mod > 0 then
-		assert(base == nil or base == system.ResourceDirectory, "Mixing modules and non-resource asset paths")
+		assert(IsResourceDir(base), "Mixing modules and non-resource asset paths")
 
 		prefix = AddSlash(mod) .. prefix
 	end
@@ -422,6 +424,84 @@ function M.Prefix_WithTableDo (t, func, arg)
 			func(k, v, prefix, base, arg)
 		end
 	end
+end
+
+-- --
+local Trash
+
+--
+local function CanThrow (name, object, dir)
+	if _Exists_(name, dir) then
+		if object and object.parent then
+			return false
+		end
+
+		return remove(PathForFile(name, dir)) ~= nil
+	end
+
+	return true
+end
+
+--
+local function AuxPutInTrash (name, object, base)
+	base = base or system.ResourceDirectory
+
+	assert(OnSimulator or base ~= system.ResourceDirectory, "Attempt to dispose of resource file")
+
+	--
+	if not Trash then
+		Trash = {}
+
+		timer.performWithDelay(200, function(event)
+			--
+			local total = 0
+
+			for dir, pile in pairs(Trash) do
+				local n = #pile
+
+				for i = n, max(n - 20, 1), -2 do
+					if CanThrow(pile[i - 1], pile[i], dir) then
+						pile[i - 1], pile[i] = pile[n - 1], pile[n]
+						n, pile[n - 1], pile[n] = n - 2
+					end
+				end
+
+				total = total + n
+			end
+
+			--
+			if total == 0 then
+				Trash = nil
+
+				timer.cancel(event.source)
+			end
+		end, 0)
+	end
+
+	--
+	local pile = Trash[base] or {}
+
+	pile[#pile + 1] = name
+	pile[#pile + 1] = object
+
+	Trash[base] = pile
+end
+
+--- DOCME
+-- @string name
+-- @param[opt=system.ResourceDirectory] base
+function M.PutInTrash (name, base)
+	AuxPutInTrash(name, false, base)
+end
+
+--- DOCME
+-- @string name
+-- @pobject object
+-- @param[opt=system.ResourceDirectory] base
+function M.PutInTrash_Guard (name, object, base)
+	assert(object, "Missing guard object")
+
+	AuxPutInTrash(name, object, base)
 end
 
 -- ^^ TODO: Assumes path is a directory...
