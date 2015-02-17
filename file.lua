@@ -426,11 +426,16 @@ function M.Prefix_WithTableDo (t, func, arg)
 	end
 end
 
--- --
+-- ^^ TODO: Assumes path is a directory...
+-- Should ignore non-troublesome extensions
+
+-- @param[opt=system.ResourceDirectory] base Directory base.
+
+-- Names of files (and associated guard objects, if any) awaiting disposal --
 local Trash
 
---
-local function CanThrow (name, object, dir)
+-- Helper to try to remove and clean up after disposed-of files
+local function TryToRemove (name, object, dir)
 	if _Exists_(name, dir) then
 		if object and object.parent then
 			return false
@@ -442,25 +447,25 @@ local function CanThrow (name, object, dir)
 	return true
 end
 
---
+-- Helper to queue up files for disposal
 local function AuxPutInTrash (name, object, base)
 	base = base or system.ResourceDirectory
 
 	assert(OnSimulator or base ~= system.ResourceDirectory, "Attempt to dispose of resource file")
 
-	--
+	-- Initialize the state, on the first time or if it went dormant.
 	if not Trash then
 		Trash = {}
 
 		timer.performWithDelay(200, function(event)
-			--
 			local total = 0
 
+			-- Try to remove a few files from each base directory.
 			for dir, pile in pairs(Trash) do
 				local n = #pile
 
 				for i = n, max(n - 20, 1), -2 do
-					if CanThrow(pile[i - 1], pile[i], dir) then
+					if TryToRemove(pile[i - 1], pile[i], dir) then
 						pile[i - 1], pile[i] = pile[n - 1], pile[n]
 						n, pile[n - 1], pile[n] = n - 2
 					end
@@ -469,7 +474,7 @@ local function AuxPutInTrash (name, object, base)
 				total = total + n
 			end
 
-			--
+			-- If no files remain, remove the state until it is needed again.
 			if total == 0 then
 				Trash = nil
 
@@ -478,7 +483,7 @@ local function AuxPutInTrash (name, object, base)
 		end, 0)
 	end
 
-	--
+	-- Add the file name, plus any guard object, to a disposal list (created, if necessary).
 	local pile = Trash[base] or {}
 
 	pile[#pile + 1] = name
@@ -494,20 +499,17 @@ function M.PutInTrash (name, base)
 	AuxPutInTrash(name, false, base)
 end
 
---- DOCME
+--- Variant of @{PutInTrash} which accepts a display object as a "guard".
+--
+-- The guard is assumed to depend upon the file, e.g. the latter supplied its assets. Thus,
+-- until the guard is removed, the trash logic will leave the file alone. The file may cease
+-- to exist via external means, of course, in which case its state is evicted.
 -- @string name
 -- @pobject object
 -- @param[opt=system.ResourceDirectory] base
 function M.PutInTrash_Guard (name, object, base)
-	assert(object, "Missing guard object")
-
-	AuxPutInTrash(name, object, base)
+	AuxPutInTrash(name, assert(object, "Missing guard object"), base)
 end
-
--- ^^ TODO: Assumes path is a directory...
--- Should ignore non-troublesome extensions
-
--- @param[opt=system.ResourceDirectory] base Directory base.
 
 --- Launches a timer to watch a file or directory for modifications.
 -- @string path File or directory path.

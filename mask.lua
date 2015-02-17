@@ -552,7 +552,7 @@ function M.NewSheet (opts)
 		end
 	end
 
-	--- DOCME
+	--- Predicate.
 	-- @treturn boolean S###
 	function MaskSheet:IsLoaded ()
 		return mask ~= nil
@@ -582,7 +582,6 @@ function M.NewSheet_Data (opts)
 	local MaskSheet, frames = {}, {}
 
 	--
-	local yfunc = opts.yfunc or DefYieldFunc
 	local cols_done, rows_done, x, y, endx = 0, 0, 3, 3
 	local ncols, nrows, dx, dy = GetCounts(fdimx, fdimy)
 
@@ -596,9 +595,6 @@ function M.NewSheet_Data (opts)
 		frames[#frames + 1] = index
 		frames[#frames + 1] = x
 		frames[#frames + 1] = y
-
-		--
-		yfunc()
 
 		--
 		if cols_done == ncols then
@@ -616,13 +612,12 @@ function M.NewSheet_Data (opts)
 
 		local xdim, ydim = GetDims(x, y, endx, ncols, dy)
 
-		data = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
-		frames, yfunc = nil
+		data, frames = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
 		return data
 	end
 
-	--- DOCME
+	--- Predicate.
 	-- @treturn boolean S###
 	function MaskSheet:IsLoaded ()
 		return frames == nil
