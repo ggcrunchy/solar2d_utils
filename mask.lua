@@ -407,6 +407,11 @@ function M.NewSheet (opts)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
 	--
+	local function BindPatterns (MS, clear, full)
+		MS.m_clear, MS.m_full = clear, full
+	end
+
+	--
 	if ms_data then
 		mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(ms_data.frames)
 		xscale, yscale = GetScales(fdimx, fdimy, ms_data.xdim, ms_data.ydim)
@@ -417,6 +422,7 @@ function M.NewSheet (opts)
 		end
 
 		MaskSheet.AddFrame, MaskSheet.Commit, MaskSheet.GetRect, MaskSheet.StashRect = Fail, Fail, Fail, Fail
+		MaskSheet.BindPatterns = BindPatterns
 
 	--
 	else
@@ -498,6 +504,12 @@ function M.NewSheet (opts)
 		end
 
 		--- DOCME
+		-- @function MaskSheet:BindPatterns
+		-- @uint[opt] clear
+		-- @uint[opt] full
+		MaskSheet.BindPatterns = BindPatterns
+
+		--- DOCME
 		-- @return ARG
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
@@ -562,13 +574,28 @@ function M.NewSheet (opts)
 	-- @pobject object
 	-- @param index
 	function MaskSheet:Set (object, index)
-		object:setMask(assert(mask, "Mask not ready"))
+		assert(mask, "Mask not ready")
 
-		local x, y = unpack(frames[index])
+		local not_clear = index ~= self.m_clear
 
-		object.maskX, object.maskScaleX = x * xscale, xscale
-		object.maskY, object.maskScaleY = y * yscale, yscale
-		-- ^^ ceil()?
+		object.isVisible = not_clear
+
+		if not_clear then -- non-visible cells are fine as is
+			-- If a cell is full, there is nothing to mask.
+			if index == self.m_full then
+				object:setMask(nil)
+
+			-- Otherwise, apply the mask at the given frame.
+			else
+				object:setMask(mask)
+
+				local x, y = unpack(frames[index])
+
+				object.maskX, object.maskScaleX = x * xscale, xscale
+				object.maskY, object.maskScaleY = y * yscale, yscale
+				-- ^^ ceil()?
+			end
+		end
 	end
 
 	return MaskSheet
