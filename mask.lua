@@ -380,6 +380,11 @@ local function AuxNewSheet (opts)
 end
 
 --
+local function BindPatterns (MS, clear, full)
+	MS.m_clear, MS.m_full = clear, full
+end
+
+--
 local function GetCounts (fdimx, fdimy)
 	local dx, dy = fdimx + 3, fdimy + 3
 
@@ -406,10 +411,8 @@ function M.NewSheet (opts)
 	local ms_data = exists and not opts.recreate and ReadData(opts, filename)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
-	--
-	local function BindPatterns (MS, clear, full)
-		MS.m_clear, MS.m_full = clear, full
-	end
+--	local XDIM = opts.frame_w or opts.dim or fdimx
+--	local YDIM = opts.frame_h or opts.dim or fdimy
 
 	--
 	if ms_data then
