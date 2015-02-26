@@ -48,6 +48,9 @@ local system = system
 local json = require("json")
 local sqlite3 = require("sqlite3")
 
+-- Cached module references --
+local _GetPixInt_
+
 -- Exports --
 local M = {}
 
@@ -241,13 +244,15 @@ end
 
 --
 local function WithDatabase (method, source, filename, func, data)
-	local db, tname
+	local db, tname = source
 
 	if type(source) == "table" then
 		db, tname = unpack(source)
+	else
+		db = source
 	end
 
-	if method == "database" then
+	if method == "database_file" then
 		db = sqlite3.open(db)
 	end
 
@@ -255,7 +260,7 @@ local function WithDatabase (method, source, filename, func, data)
 
 	local res = func(db, tname, filename, data)
 
-	if method == "database" then
+	if method == "database_file" then
 		db:close()
 	end
 
@@ -266,8 +271,8 @@ end
 local function AuxRead (db, tname, filename)
 	local data
 
-	for _ in db:urows([[SELECT 1 FROM sql_master_table WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
-		for _, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
+	for _ in db:urows([[SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
+		for ii, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
 			data = v
 		end
 	end
@@ -276,7 +281,7 @@ local function AuxRead (db, tname, filename)
 end
 
 -- Helper to check dimension validity
-local function CheckDim (data, fdim, idim)
+local function CheckDim (fdim, idim)
 	return IsPosInt(fdim) and IsPosInt(idim) and idim > fdim
 end
 
@@ -286,7 +291,7 @@ local function ReadData (opts, filename)
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
-	if method == "database" or method == "database_handle" then
+	if method == "database_file" or method == "database_handle" then
 		data = WithDatabase(method, data, filename, AuxRead)
 
 	-- Read from PNG --
@@ -309,7 +314,7 @@ end
 local function AuxWrite (db, tname, filename, data)
 	db:exec([[
 		CREATE TABLE IF NOT EXISTS ]] .. tname .. [[ (m_KEY UNIQUE, m_DATA);
-		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(]] .. filename .. [[, ]] .. data .. [[);
+		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(']] .. filename .. [[', ']] .. data .. [[');
 	]])
 end
 
@@ -324,14 +329,15 @@ local function WriteData (method, source, frames, fdimx, fdimy, xdim, ydim, file
 	end
 
 	--
-	local vals = json.encode{ frames = frames, xdim = xdim, ydim = ydim }
+	local data = { frames = frames, xdim = xdim, ydim = ydim }
+	local vals = json.encode(data)
 
-	-- Read a string out of a database (which may be opened) --
+	-- Write a string into a database (which may be opened) --
 	-- arg: { name / db, table name (def = "corona_mask_data") } / arg: name / db
-	if method == "database" or method == "database_handle" then
+	if method == "database_file" or method == "database_handle" then
 		WithDatabase(method, source, filename, AuxWrite, vals)
 
-	-- Read from PNG --
+	-- Write to PNG --
 	-- arg: { filename, keyword (def = "CoronaMaskData") }
 	elseif method == "image_metadata" then
 		-- FindText(keyword) = "CoronaMaskData"...
@@ -339,18 +345,28 @@ local function WriteData (method, source, frames, fdimx, fdimy, xdim, ydim, file
 
 	-- Raw string --
 	else
-		return vals
+		return data, vals
 	end
 
-	return source
+	return data, source
 end
 
---
-local function GetPixInt (opts, name1, name2, message)
-	local int = opts[name1] or opts[name2]
+--- DOCME
+-- @ptable opts
+-- @string spec_name
+-- @string common_name
+-- @string[opt] message
+function M.GetPixInt (opts, spec_name, common_name, message)
+	assert(opts, "Missing options")
+
+	local int = opts[spec_name] or opts[common_name]
 
 	if not IsPosInt(int) then
-		assert(false, "Missing pixel " .. message)
+		if message then
+			assert(false, "Missing pixel " .. message)
+		else
+			assert(false, "Missing field: <" .. spec_name .. "> or <" .. common_name .. ">")
+		end
 	end
 
 	return int
@@ -361,8 +377,8 @@ local function GetDim (opts, fdim, dim_name, npix_name, message1, message2)
 	if fdim then
 		return fdim, ("%i"):format(fdim)
 	else
-		local pix_dim = GetPixInt(opts, dim_name, "pix_dim", message1)
-		local npix = GetPixInt(opts, npix_name, "npix", message2)
+		local pix_dim = _GetPixInt_(opts, dim_name, "pix_dim", message1)
+		local npix = _GetPixInt_(opts, npix_name, "npix", message2)
 
 		return pix_dim * npix, ("%ip%i"):format(pix_dim, npix)
 	end
@@ -376,7 +392,7 @@ local function AuxNewSheet (opts)
 	local fdimy, ystr = GetDim(opts, fdimx or opts.fdimy, "pixh", "npix_rows", "height", "row count")
 	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
 
-	return fdimx, fdimy, ("__%s_%sx%s%s__.png"):format(name, xstr, ystr, id), opts.method, opts.arg
+	return fdimx, fdimy, ("__%s_%sx%s%s__.png"):format(name, xstr, ystr, id), opts.method, opts.data
 end
 
 --
@@ -513,6 +529,7 @@ function M.NewSheet (opts)
 		MaskSheet.BindPatterns = BindPatterns
 
 		--- DOCME
+		-- @treturn table DATA
 		-- @return ARG
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
@@ -526,7 +543,7 @@ function M.NewSheet (opts)
 			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
 
-			data = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
+			local dt, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
 			-- Clean up temporary resources.
 			back:removeSelf()
@@ -539,7 +556,7 @@ function M.NewSheet (opts)
 			mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(frames)
 			xscale, yscale = GetScales(fdimx, fdimy, xdim, ydim)
 
-			return data
+			return dt, source
 		end
 
 		--- DOCME
@@ -683,6 +700,9 @@ function M.SetDynamicMask (object, w, h)
 		object.maskY = object.y
 	end
 end
+
+-- Cache module members.
+_GetPixInt_ = M.GetPixInt
 
 -- Export the module.
 return M
