@@ -286,13 +286,13 @@ local function CheckDim (fdim, idim)
 end
 
 -- Tries to read file-related data from some source
-local function ReadData (opts, filename)
-	local method, data = opts.method, opts.data
+local function ReadData (opts, filename, fdimx, fdimy)
+	local method, source, data = opts.method, opts.data
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
 	if method == "database_file" or method == "database_handle" then
-		data = WithDatabase(method, data, filename, AuxRead)
+		source = WithDatabase(method, source, filename, AuxRead)
 
 	-- Read from PNG --
 	elseif method == "image_metadata" then
@@ -300,14 +300,16 @@ local function ReadData (opts, filename)
 		-- arg = ...
 	end
 
-	if type(data) == "string" then
-		data = json.decode(data)
+	if type(source) == "string" then
+		data = json.decode(source)
+	else
+		data = source
 	end
 
 	return type(data) == "table" -- Is it a table...
 		and type(data.frames) == "table" and IsPosInt(#data.frames) -- ...does it have per-frame data...
-		and CheckDim(data.fdimx, data.xdim) and CheckDim(data.fdimy, data.ydim) -- ...and valid frame / image dimensions?
-		and data -- All good: return the data
+		and CheckDim(fdimx, data.xdim) and CheckDim(fdimy, data.ydim) -- ...and valid frame / image dimensions?
+		and data, source -- All good: return the data
 end
 
 --
@@ -423,9 +425,13 @@ end
 function M.NewSheet (opts)
 	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
 	local base_dir = opts.dir or system.CachesDirectory
-	local exists = file.Exists(filename, base_dir)
-	local ms_data = exists and not opts.recreate and ReadData(opts, filename)
+	local exists, ms_data, source = file.Exists(filename, base_dir)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
+
+	--
+	if exists and not opts.recreate then
+		ms_data, source = ReadData(opts, filename, fdimx, fdimy)
+	end
 
 --	local XDIM = opts.frame_w or opts.dim or fdimx
 --	local YDIM = opts.frame_h or opts.dim or fdimy
@@ -529,8 +535,6 @@ function M.NewSheet (opts)
 		MaskSheet.BindPatterns = BindPatterns
 
 		--- DOCME
-		-- @treturn table DATA
-		-- @return ARG
 		function MaskSheet:Commit ()
 			assert(not mask, "Mask already created")
 
@@ -543,7 +547,7 @@ function M.NewSheet (opts)
 			-- Save the image and mask data.
 			Save(mgroup, filename, base_dir)
 
-			local dt, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
+			ms_data, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
 			-- Clean up temporary resources.
 			back:removeSelf()
@@ -555,8 +559,6 @@ function M.NewSheet (opts)
 			-- Create a mask with final frames.
 			mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(frames)
 			xscale, yscale = GetScales(fdimx, fdimy, xdim, ydim)
-
-			return dt, source
 		end
 
 		--- DOCME
@@ -582,6 +584,18 @@ function M.NewSheet (opts)
 				rect:removeSelf()
 			end
 		end
+	end
+
+	--- Getter.
+	-- @return X
+	function MaskSheet:GetData ()
+		return ms_data
+	end
+
+	--- Getter.
+	-- @return X
+	function MaskSheet:GetSource ()
+		return source
 	end
 
 	--- Predicate.
@@ -626,7 +640,7 @@ end
 -- @treturn MaskSheet MS
 function M.NewSheet_Data (opts)
 	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
-	local MaskSheet, frames = {}, {}
+	local MaskSheet, frames, source = {}, {}
 
 	--
 	local cols_done, rows_done, x, y, endx = 0, 0, 3, 3
@@ -653,15 +667,26 @@ function M.NewSheet_Data (opts)
 	end
 
 	--- DOCME
-	-- @return ARG
 	function MaskSheet:Commit ()
 		assert(frames, "Data already created")
 
 		local xdim, ydim = GetDims(x, y, endx, ncols, dy)
 
-		data, frames = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
+		data, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
+		frames = nil
+	end
+
+	--- DOCME
+	-- @return ARG
+	function MaskSheet:GetData ()
 		return data
+	end
+
+	--- DOCME
+	-- @return ARG
+	function MaskSheet:GetSource ()
+		return source
 	end
 
 	--- Predicate.
