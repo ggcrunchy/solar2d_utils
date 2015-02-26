@@ -27,17 +27,15 @@
 local assert = assert
 local format = string.format
 local floor = math.floor
-local max = math.max
 local remove = os.remove
 local tostring = tostring
 local type = type
 local unpack = unpack
 
 -- Modules --
+local capture = require("corona_utils.capture")
 local file = require("corona_utils.file")
-local strings = require("tektite_core.var.strings")
 local var_preds = require("tektite_core.var.predicates")
-local timers = require("corona_utils.timers")
 
 -- Corona globals --
 local display = display
@@ -49,10 +47,57 @@ local json = require("json")
 local sqlite3 = require("sqlite3")
 
 -- Cached module references --
+local _GetField_
 local _GetPixInt_
 
 -- Exports --
 local M = {}
+
+-- --
+local Usage = {}
+
+--- DOCME
+-- @ptable[opt] opts
+-- @param name
+-- @return V
+-- @return S
+function M.GetField (opts, name)
+	local res, message = opts and opts[name]
+
+	if opts then
+		local usage = Usage[name]
+
+		if type(usage) == "table" then
+			local v1, v2 = opts[usage[1]], opts[usage[2]]
+
+			if v1 ~= nil then
+				res = v1
+			elseif v2 ~= nil then
+				res = v2
+			else
+				message = tostring(usage[3])
+			end
+
+		elseif res == nil then
+			res = usage
+		end
+	else
+		message = "Options missing"
+	end
+
+	return res, message or ""
+end
+
+--
+local function AddPixUsageTable (pref_name, def_name, message)
+	if message then
+		message = "Missing pixel " .. message
+	else
+		message = "Missing field: <" .. pref_name .. "> or <" .. def_name .. ">"
+	end
+
+	Usage[pref_name] = { pref_name, def_name, message }
+end
 
 -- Add 3 pixels to each side, then add (4 - 1) to round up to next multiple of 4 --
 local Rounding = 3 * 2 + 3
@@ -99,26 +144,6 @@ local function BlackRect (group, stash, x, y, w, h)
 	return NewRect(group, stash, x, y, w, h, 0)
 end
 
--- --
-local SaveParams = { isFullResolution = true }
-
---
-local function Save (group, name, base_dir)
-	-- Generate a new name, if none is provided. As a sanity check, verify no such file exists.
-	if not name then
-		repeat
-			name = strings.AddExtension(strings.NewName(), "png")
-		until not file.Exists(name, base_dir)
-	end
-
-	-- Save the group as a PNG. Return the filename, since it may have been auto-generated.
-	SaveParams.filename, SaveParams.baseDir = name, base_dir
-
-	display.save(group, SaveParams)
-
-	return name
-end
-
 --- Generates a rectangular mask, for use with `graphics.setMask`.
 -- @uint w Mask width...
 -- @uint h ...and height.
@@ -138,7 +163,8 @@ function M.NewMask (w, h, name, base_dir)
 
 		BlackRect(group, nil, 0, 0, w + ew + xpad * 2, h + eh + ypad * 2)
 		NewRect(group, nil, xpad, ypad, w + ew, h + eh)
-		Save(group, name, base_dir)
+
+		capture.Save(group, name, base_dir)
 
 		group:removeSelf()
 	end
@@ -148,65 +174,6 @@ end
 
 -- --
 local CW, CH = display.contentWidth - 6, display.contentHeight - 6
-
---
-local function InBounds (bounds, gbounds)
-	return gbounds.xMin >= 0 and gbounds.yMin >= 0 and gbounds.xMax <= bounds.xMax and gbounds.yMax <= bounds.yMax
-end
-
--- --
-local SheetFrame = {}
-
--- --
-local Sheet = { frames = { SheetFrame } }
-
--- --
-local TrashPile, TrashTimer = {}
-
---
-local function CaptureBounds (group, bounds, hidden, yfunc)
-	-- Contents are visible: just capture the bounds directly.
-	if not hidden then
-		return display.captureBounds(bounds)
-	else
-		local gbounds = group.contentBounds
-
-		-- Obscured, but within bounds: just capture the group.
-		if InBounds(bounds, gbounds) then
-			return display.capture(group)
-
-		-- Out-of-bounds: make an intermediate image and capture that.
-		else
-			-- Move the group fully on screen, detecting too-large cases.
-			local movex, movey = max(0, -gbounds.xMin), max(0, -gbounds.yMin)
-
-			assert(gbounds.xMax + movex <= CW, "Frame too wide to capture!")
-			assert(gbounds.yMax + movey <= CH, "Frame too tall to capture!")
-			-- ^^ Okay?
-
-			-- Save the group to an image.
-			group.x, group.y = group.x + movex, group.y + movey
-
-			local name = Save(group, nil, system.TemporaryDirectory)
-
-			--
-			yfunc()
-
-			-- Create a one-frame image sheet, where the frame is positioned over the bounded part of
-			-- the content. Reload it as a sprite (in the group's parent), then capture and return it.
-			-- Since the image is a temporary resource, queue it up for subsequent removal.
-			SheetFrame.x, SheetFrame.width = movex, bounds.xMax - bounds.xMin
-			SheetFrame.y, SheetFrame.height = movey, bounds.yMax - bounds.yMin
-
-			local sheet = graphics.newImageSheet(name, system.TemporaryDirectory, Sheet)
-			local image = display.newImage(group.parent, sheet, 1)
-
-			file.PutInTrash_Guard(name, image, system.TemporaryDirectory)
-
-			return image
-		end
-	end
-end
 
 --
 local function DefYieldFunc () end
@@ -272,7 +239,7 @@ local function AuxRead (db, tname, filename)
 	local data
 
 	for _ in db:urows([[SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
-		for ii, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
+		for _, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
 			data = v
 		end
 	end
@@ -285,14 +252,19 @@ local function CheckDim (fdim, idim)
 	return IsPosInt(fdim) and IsPosInt(idim) and idim > fdim
 end
 
+--
+local function SetData (MS, data, str)
+	MS.m_data, MS.m_data_str = data, str
+end
+
 -- Tries to read file-related data from some source
-local function ReadData (opts, filename, fdimx, fdimy)
-	local method, source, data = opts.method, opts.data
+local function ReadData (MS, opts, filename, fdimx, fdimy)
+	local method, data, str = opts.method, opts.data
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
 	if method == "database_file" or method == "database_handle" then
-		source = WithDatabase(method, source, filename, AuxRead)
+		data = WithDatabase(method, data, filename, AuxRead)
 
 	-- Read from PNG --
 	elseif method == "image_metadata" then
@@ -300,16 +272,17 @@ local function ReadData (opts, filename, fdimx, fdimy)
 		-- arg = ...
 	end
 
-	if type(source) == "string" then
-		data = json.decode(source)
-	else
-		data = source
+	-- If the data is not already a table, try to convert it to one. Register the data (and
+	-- any pre-conversion string) with the sheet if the final data is valid.
+	if type(data) == "string" then
+		data, str = json.decode(data), data
 	end
 
-	return type(data) == "table" -- Is it a table...
-		and type(data.frames) == "table" and IsPosInt(#data.frames) -- ...does it have per-frame data...
-		and CheckDim(fdimx, data.xdim) and CheckDim(fdimy, data.ydim) -- ...and valid frame / image dimensions?
-		and data, source -- All good: return the data
+	if type(data) == "table" -- Is it a table...
+		and type(data.frames) == "table" and IsPosInt(#data.frames) -- ...with per-frame data...
+		and CheckDim(fdimx, data.xdim) and CheckDim(fdimy, data.ydim) then -- ...and valid frame / image dimensions?
+			SetData(MS, data, str)
+	end
 end
 
 --
@@ -321,7 +294,7 @@ local function AuxWrite (db, tname, filename, data)
 end
 
 --
-local function WriteData (method, source, frames, fdimx, fdimy, xdim, ydim, filename)
+local function WriteData (MS, method, source, frames, fdimx, fdimy, xdim, ydim, filename)
 	-- Correct the mask coordinates to refer to frame centers, relative to the mask center.
 	local xcorr = floor((xdim - fdimx + 1) / 2)
 	local ycorr = floor((ydim - fdimy + 1) / 2)
@@ -344,45 +317,57 @@ local function WriteData (method, source, frames, fdimx, fdimy, xdim, ydim, file
 	elseif method == "image_metadata" then
 		-- FindText(keyword) = "CoronaMaskData"...
 		-- ^^ Add (or update)
-
-	-- Raw string --
-	else
-		return data, vals
 	end
 
-	return data, source
+	-- Register the data and pre-conversion string.
+	SetData(MS, data, vals)
 end
 
 --- DOCME
 -- @ptable opts
 -- @string spec_name
 -- @string common_name
--- @string[opt] message
-function M.GetPixInt (opts, spec_name, common_name, message)
-	assert(opts, "Missing options")
+-- @tparam[opt] ?|string|boolean message
+-- @treturn ?|uint|boolean X
+function M.GetPixInt (opts, spec_name, common_name)--, message)
+--	assert(opts, "Missing options")
 
-	local int = opts[spec_name] or opts[common_name]
+	local int = assert(_GetField_(spec_name, common_name))--opts[spec_name] or opts[common_name]
 
-	if not IsPosInt(int) then
-		if message then
+	assert(IsPosInt(int), "Not a positive integer")
+	--[[
+		assert
+		if message == false then
+			return false
+		elseif type(message) == "string" then
 			assert(false, "Missing pixel " .. message)
 		else
 			assert(false, "Missing field: <" .. spec_name .. "> or <" .. common_name .. ">")
 		end
-	end
+	end]]
 
 	return int
 end
 
 --
-local function GetDim (opts, fdim, dim_name, npix_name, message1, message2)
-	if fdim then
-		return fdim, ("%i"):format(fdim)
-	else
-		local pix_dim = _GetPixInt_(opts, dim_name, "pix_dim", message1)
-		local npix = _GetPixInt_(opts, npix_name, "npix", message2)
+AddPixUsageTable("npix_cols", "npix", "column count")
+AddPixUsageTable("npix_rows", "npix", "row count")
+AddPixUsageTable("pixw", "pix_dim", "width")
+AddPixUsageTable("pixh", "pix_dim", "height")
+AddPixUsageTable("ncols", "count")
+AddPixUsageTable("nrows", "count")
+AddPixUsageTable("npix_sprite_cols", "npix_sprite")
+AddPixUsageTable("npix_sprite_cols", "npix_sprite")
 
-		return pix_dim * npix, ("%ip%i"):format(pix_dim, npix)
+--
+local function GetDim (opts, fdim, dim_name, npix_name)--, message1, message2)
+	if fdim then
+		return fdim, format("%i", fdim)
+	else
+		local pix_dim = _GetPixInt_(opts, dim_name)--, "pix_dim", message1)
+		local npix = _GetPixInt_(opts, npix_name)--, "npix", message2)
+
+		return pix_dim * npix, format("%ip%i", pix_dim, npix)
 	end
 end
 
@@ -390,11 +375,11 @@ end
 local function AuxNewSheet (opts)
 	assert(opts, "Missing options")
 
-	local fdimx, xstr = GetDim(opts, opts.dimx or opts.dim, "pixw", "npix_cols", "width", "column count")
-	local fdimy, ystr = GetDim(opts, fdimx or opts.fdimy, "pixh", "npix_rows", "height", "row count")
+	local fdimx, xstr = GetDim(opts, opts.dimx or opts.dim, "pixw", "npix_cols")--, "width", "column count")
+	local fdimy, ystr = GetDim(opts, fdimx or opts.fdimy, "pixh", "npix_rows")--, "height", "row count")
 	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
 
-	return fdimx, fdimy, ("__%s_%sx%s%s__.png"):format(name, xstr, ystr, id), opts.method, opts.data
+	return fdimx, fdimy, format("__%s_%sx%s%s__.png", name, xstr, ystr, id), opts.method, opts.data
 end
 
 --
@@ -403,10 +388,32 @@ local function BindPatterns (MS, clear, full)
 end
 
 --
+local function CheckGridFields (opts)
+	local n = 0
+
+	n = n + (_GetPixInt_(opts, "ncols", "count") and 1 or 0)
+	n = n + (_GetPixInt_(opts, "nrows", "count") and 1 or 0)
+	n = n + (_GetPixInt_(opts, "npix_sprite_cols", "npix_sprite") and 1 or 0)
+	n = n + (_GetPixInt_(opts, "npix_sprite_rows", "npix_sprite") and 1 or 0)
+
+	assert(n == 0 or n == 4, "Incomplete set of grid fields")
+end
+
+--
 local function GetCounts (fdimx, fdimy)
 	local dx, dy = fdimx + 3, fdimy + 3
 
 	return floor((CW + 3) / dx), floor((CH + 3) / dy), dx, dy
+end
+
+--
+local function GetData (MS)
+	return MS.m_data
+end
+
+--
+local function GetDataString (MS)
+	return MS.m_data_str
 end
 
 --
@@ -425,29 +432,31 @@ end
 function M.NewSheet (opts)
 	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
 	local base_dir = opts.dir or system.CachesDirectory
-	local exists, ms_data, source = file.Exists(filename, base_dir)
+	local exists = file.Exists(filename, base_dir)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
 	--
 	if exists and not opts.recreate then
-		ms_data, source = ReadData(opts, filename, fdimx, fdimy)
+		ReadData(MaskSheet, opts, filename, fdimx, fdimy)
 	end
 
 --	local XDIM = opts.frame_w or opts.dim or fdimx
 --	local YDIM = opts.frame_h or opts.dim or fdimy
 
 	--
+	local ms_data = GetData(MaskSheet)
+
 	if ms_data then
 		mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(ms_data.frames)
 		xscale, yscale = GetScales(fdimx, fdimy, ms_data.xdim, ms_data.ydim)
 
-		-- Add dummy methods.
+		-- Add dummy and non-closure methods.
 		local function Fail ()
 			assert(false, "Mask already created")
 		end
 
 		MaskSheet.AddFrame, MaskSheet.Commit, MaskSheet.GetRect, MaskSheet.StashRect = Fail, Fail, Fail, Fail
-		MaskSheet.BindPatterns = BindPatterns
+		MaskSheet.BindPatterns, MaskSheet.GetData, MaskSheet.GetDataString = BindPatterns, GetData, GetDataString
 
 	--
 	else
@@ -504,9 +513,13 @@ function M.NewSheet (opts)
 			func(cgroup, 1 - bg, fdimx, fdimy, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
-			local capture = CaptureBounds(cgroup, bounds, hidden, yfunc)
+			local fcap = capture.CaptureBounds(cgroup, bounds, {
+				w = CW, h = CH,
+				base_dir = system.TemporaryDirectory,
+				hidden = hidden, yfunc = yfunc
+			})
 
-			mgroup:insert(capture)
+			mgroup:insert(fcap)
 
 			yfunc()
 
@@ -517,7 +530,7 @@ function M.NewSheet (opts)
 
 			cgroup:removeSelf()
 
-			UpperLeftAlign(capture, x, y)
+			UpperLeftAlign(fcap, x, y)
 
 			-- Advance past the frame.
 			if cols_done == ncols then
@@ -545,9 +558,9 @@ function M.NewSheet (opts)
 			background:toBack()
 
 			-- Save the image and mask data.
-			Save(mgroup, filename, base_dir)
+			capture.Save(mgroup, filename, base_dir)
 
-			ms_data, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
+			WriteData(self, method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
 			-- Clean up temporary resources.
 			back:removeSelf()
@@ -560,6 +573,16 @@ function M.NewSheet (opts)
 			mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(frames)
 			xscale, yscale = GetScales(fdimx, fdimy, xdim, ydim)
 		end
+
+		--- Getter.
+		-- @function MaskSheet:GetData
+		-- @return X
+		MaskSheet.GetData = GetData
+
+		--- Getter.
+		-- @function MaskSheet:GetDataString
+		-- @return X
+		MaskSheet.GetDataString = GetDataString
 
 		--- DOCME
 		-- @pgroup group
@@ -584,18 +607,6 @@ function M.NewSheet (opts)
 				rect:removeSelf()
 			end
 		end
-	end
-
-	--- Getter.
-	-- @return X
-	function MaskSheet:GetData ()
-		return ms_data
-	end
-
-	--- Getter.
-	-- @return X
-	function MaskSheet:GetSource ()
-		return source
 	end
 
 	--- Predicate.
@@ -640,7 +651,7 @@ end
 -- @treturn MaskSheet MS
 function M.NewSheet_Data (opts)
 	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
-	local MaskSheet, frames, source = {}, {}
+	local MaskSheet_Data, frames = {}, {}
 
 	--
 	local cols_done, rows_done, x, y, endx = 0, 0, 3, 3
@@ -648,7 +659,7 @@ function M.NewSheet_Data (opts)
 
 	--- DOCME
 	-- @param index
-	function MaskSheet:AddFrame (index)
+	function MaskSheet_Data:AddFrame (index)
 		assert(frames, "Data already created")
 		assert(rows_done < nrows, "No space for new frames")
 
@@ -667,35 +678,33 @@ function M.NewSheet_Data (opts)
 	end
 
 	--- DOCME
-	function MaskSheet:Commit ()
+	function MaskSheet_Data:Commit ()
 		assert(frames, "Data already created")
 
 		local xdim, ydim = GetDims(x, y, endx, ncols, dy)
 
-		data, source = WriteData(method, data, frames, fdimx, fdimy, xdim, ydim, filename)
+		WriteData(self, method, data, frames, fdimx, fdimy, xdim, ydim, filename)
 
 		frames = nil
 	end
 
-	--- DOCME
-	-- @return ARG
-	function MaskSheet:GetData ()
-		return data
-	end
+	--- Getter.
+	-- @function MaskSheet_Data:GetData
+	-- @return X
+	MaskSheet_Data.GetData = GetData
 
-	--- DOCME
-	-- @return ARG
-	function MaskSheet:GetSource ()
-		return source
-	end
+	--- Getter.
+	-- @function MaskSheet_Data:GetDataString
+	-- @return X
+	MaskSheet_Data.GetDataString = GetDataString
 
 	--- Predicate.
 	-- @treturn boolean S###
-	function MaskSheet:IsLoaded ()
+	function MaskSheet_Data:IsLoaded ()
 		return frames == nil
 	end
 
-	return MaskSheet
+	return MaskSheet_Data
 end
 
 --- DOCME
@@ -727,6 +736,7 @@ function M.SetDynamicMask (object, w, h)
 end
 
 -- Cache module members.
+_GetField_ = M.GetField
 _GetPixInt_ = M.GetPixInt
 
 -- Export the module.
