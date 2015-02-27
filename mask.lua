@@ -35,6 +35,7 @@ local unpack = unpack
 -- Modules --
 local capture = require("corona_utils.capture")
 local file = require("corona_utils.file")
+local schema = require("tektite_core.table.schema")
 local var_preds = require("tektite_core.var.predicates")
 
 -- Corona globals --
@@ -253,8 +254,8 @@ local function CheckDim (fdim, idim)
 end
 
 --
-local function SetData (MS, data, str)
-	MS.m_data, MS.m_data_str = data, str
+local function SetData (MS, data)
+	MS.m_data = data
 end
 
 -- Tries to read file-related data from some source
@@ -272,16 +273,16 @@ local function ReadData (MS, opts, filename, fdimx, fdimy)
 		-- arg = ...
 	end
 
-	-- If the data is not already a table, try to convert it to one. Register the data (and
-	-- any pre-conversion string) with the sheet if the final data is valid.
+	-- If the data is not already a table, try to convert it to one. If the final data is valid,
+	-- register it with the sheet.
 	if type(data) == "string" then
-		data, str = json.decode(data), data
+		data = json.decode(data)
 	end
 
 	if type(data) == "table" -- Is it a table...
 		and type(data.frames) == "table" and IsPosInt(#data.frames) -- ...with per-frame data...
 		and CheckDim(fdimx, data.xdim) and CheckDim(fdimy, data.ydim) then -- ...and valid frame / image dimensions?
-			SetData(MS, data, str)
+			SetData(MS, data)
 	end
 end
 
@@ -319,8 +320,8 @@ local function WriteData (MS, method, source, frames, fdimx, fdimy, xdim, ydim, 
 		-- ^^ Add (or update)
 	end
 
-	-- Register the data and pre-conversion string.
-	SetData(MS, data, vals)
+	-- Register the data.
+	SetData(MS, data)
 end
 
 --- DOCME
@@ -358,6 +359,21 @@ AddPixUsageTable("ncols", "count")
 AddPixUsageTable("nrows", "count")
 AddPixUsageTable("npix_sprite_cols", "npix_sprite")
 AddPixUsageTable("npix_sprite_cols", "npix_sprite")
+
+--
+local function PixAlt (alt, message)
+	return { alt, message = "Missing pixel " .. message }
+end
+
+-- --
+local Schema = schema.NewSchema{
+	alt_groups = {
+		-- count = {},
+		npix = { PixAlt("npix_cols", "column count"), PixAlt("npix_rows", "row count") },
+		-- npix_sprite = { },
+		pix_dim = { PixAlt("pixw", "width"), PixAlt("pixh", "height") }
+	}
+}
 
 --
 local function GetDim (opts, fdim, dim_name, npix_name)--, message1, message2)
@@ -409,11 +425,6 @@ end
 --
 local function GetData (MS)
 	return MS.m_data
-end
-
---
-local function GetDataString (MS)
-	return MS.m_data_str
 end
 
 --
@@ -692,11 +703,6 @@ function M.NewSheet_Data (opts)
 	-- @function MaskSheet_Data:GetData
 	-- @return X
 	MaskSheet_Data.GetData = GetData
-
-	--- Getter.
-	-- @function MaskSheet_Data:GetDataString
-	-- @return X
-	MaskSheet_Data.GetDataString = GetDataString
 
 	--- Predicate.
 	-- @treturn boolean S###
