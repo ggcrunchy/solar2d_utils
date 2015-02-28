@@ -36,6 +36,7 @@ local unpack = unpack
 local capture = require("corona_utils.capture")
 local file = require("corona_utils.file")
 local schema = require("tektite_core.table.schema")
+local sqlite_db = require("tektite_core.sqlite_db")
 local var_preds = require("tektite_core.var.predicates")
 
 -- Corona globals --
@@ -64,13 +65,13 @@ local function Extra (n)
 	return (padding - odd) / 2, odd
 end
 
---
+-- Helper to align display objects
 local function UpperLeftAlign (object, x, y)
 	object.anchorX, object.x = 0, x or 0
 	object.anchorY, object.y = 0, y or 0
 end
 
---
+-- Common display rect constructor
 local function NewRect (group, stash, x, y, w, h, color)
 	local n, rect = stash and stash.numChildren or 0
 
@@ -126,10 +127,10 @@ function M.NewMask (w, h, name, base_dir)
 	return name
 end
 
--- --
-local CW, CH = display.contentWidth - 6, display.contentHeight - 6
+-- Content dimensions available to build up mask --
+local MaskContentW, MaskContentH = display.contentWidth - 6, display.contentHeight - 6
 
---
+-- Default yield function: no-op
 local function DefYieldFunc () end
 
 -- read sources: table (parent, key); database (table, key, is_open); embedded (chunk type, key)
@@ -140,7 +141,7 @@ local function DefYieldFunc () end
 --   Null separator: 1 byte
 --   Text:           n bytes (character string)
 
---
+-- Positive integer predicate
 local function IsPosInt (var)
 	return var_preds.IsInteger(var) and var > 0, "Not a positive integer"
 end
@@ -190,15 +191,7 @@ end
 
 -- Helper to read data out of a database table, if it exists
 local function AuxRead (db, tname, filename)
-	local data
-
-	for _ in db:urows([[SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ']] .. tname .. [[';]]) do
-		for _, v in db:urows([[SELECT * FROM ]] .. tname .. [[ WHERE m_KEY = ']] .. filename .. [[';]]) do
-			data = v
-		end
-	end
-
-	return data
+	return sqlite_db.TableExists(db, tname) and sqlite_db.GetOneValueInTable(db, tname, filename)
 end
 
 -- Helper to check dimension validity
@@ -213,7 +206,7 @@ end
 
 -- Tries to read file-related data from some source
 local function ReadData (MS, opts, filename, fdimx, fdimy)
-	local method, data, str = opts.method, opts.data
+	local method, data = opts.method, opts.data
 
 	-- Read a string out of a database (which may be opened) --
 	-- arg: { name / db, table, key }
@@ -241,10 +234,7 @@ end
 
 --
 local function AuxWrite (db, tname, filename, data)
-	db:exec([[
-		CREATE TABLE IF NOT EXISTS ]] .. tname .. [[ (m_KEY UNIQUE, m_DATA);
-		INSERT OR REPLACE INTO ]] .. tname .. [[ VALUES(']] .. filename .. [[', ']] .. data .. [[');
-	]])
+	sqlite_db.InsertOrReplaceKeyData(db, tname, filename, data, true)
 end
 
 --
@@ -329,7 +319,7 @@ end
 local function GetCounts (fdimx, fdimy)
 	local dx, dy = fdimx + 3, fdimy + 3
 
-	return floor((CW + 3) / dx), floor((CH + 3) / dy), dx, dy
+	return floor((MaskContentW + 3) / dx), floor((MaskContentH + 3) / dy), dx, dy
 end
 
 --
@@ -441,7 +431,7 @@ local function NewSheetBody (opts, use_grid)
 
 			-- Capture the frame and incorporate it into the built-up mask.
 			local fcap = capture.CaptureBounds(cgroup, bounds, {
-				w = CW, h = CH,
+				w = MaskContentW, h = MaskContentH,
 				base_dir = system.TemporaryDirectory,
 				hidden = hidden, yfunc = yfunc
 			})

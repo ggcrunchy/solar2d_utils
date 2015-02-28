@@ -254,6 +254,7 @@ function M.LevelExists (name, wip)
 	for name, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
 		exists, blob = true, data
 	end
+	-- ^^ TODO Use db module
 
 	return exists, blob
 end

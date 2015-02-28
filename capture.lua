@@ -42,13 +42,13 @@ local _Save_
 -- Exports --
 local M = {}
 
---
+-- Default yield function: no-op
 local function DefYieldFunc () end
 
--- --
+-- Configurable frame --
 local SheetFrame = {}
 
--- --
+-- Single-frame sheet used to confine capture --
 local Sheet = { frames = { SheetFrame } }
 
 --- DOCME
@@ -85,7 +85,6 @@ function M.CaptureBounds (group, bounds, opts)
 
 			local name = _Save_(group, nil, base_dir)
 
-			--
 			yfunc()
 
 			-- Create a one-frame image sheet, where the frame is positioned over the bounded part of
@@ -104,7 +103,7 @@ function M.CaptureBounds (group, bounds, opts)
 	end
 end
 
--- --
+-- Group save parameters --
 local SaveParams = { isFullResolution = true }
 
 --- DOCME
@@ -122,7 +121,7 @@ function M.Save (group, name, base_dir)
 		until not file.Exists(name, base_dir)
 	end
 
-	-- Save the group as a PNG. Return the filename, since it may have been auto-generated.
+	-- Save the group as a PNG. Return the filename, which may have been auto-generated.
 	SaveParams.filename, SaveParams.baseDir = name, base_dir
 
 	display.save(group, SaveParams)

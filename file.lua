@@ -319,6 +319,7 @@ function M.GetContents (path, base)
 					from = index
 				end
 			end
+			-- ^^ TODO: table existence, add Select utility to db module
 		until not db
 	end
 
