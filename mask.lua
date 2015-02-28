@@ -142,7 +142,7 @@ local function DefYieldFunc () end
 
 --
 local function IsPosInt (var)
-	return var_preds.IsInteger(var) and var > 0
+	return var_preds.IsInteger(var) and var > 0, "Not a positive integer"
 end
 
 -- Rounds up to next multiple of 4 (mask dimensions requirement)
@@ -279,7 +279,7 @@ end
 
 --
 local function PixAlt (alt, message)
-	return { alt, message = "Missing pixel " .. message }
+	return { alt, message = "pixel " .. message }
 end
 
 -- --
@@ -289,7 +289,7 @@ local Schema = schema.NewSchema{
 		npix = { PixAlt("_cols", "column count"), PixAlt("_rows", "row count"), prefixed = true },
 		npix_sprite = { "_cols", "_rows", prefixed = true },
 		pix_dim = { PixAlt("pixw", "width"), PixAlt("pixh", "height") }
-	}, required = true
+	}, def_predicate = IsPosInt, def_required = true
 }
 
 --- DOCME
@@ -300,21 +300,11 @@ function M.NewReader (opts)
 end
 
 --
-local function GetPixInt (reader, name)
-	local int = reader(name)
-
-	assert(IsPosInt(int), "Not a positive integer")
-
-	return int
-end
-
---
 local function GetDim (reader, fdim, dim_name, npix_name)
 	if fdim then
 		return fdim, format("%i", fdim)
 	else
-		local pix_dim = GetPixInt(reader, dim_name)
-		local npix = GetPixInt(reader, npix_name)
+		local pix_dim, npix = reader(dim_name), reader(npix_name)
 
 		return pix_dim * npix, format("%ip%i", pix_dim, npix)
 	end
