@@ -48,57 +48,10 @@ local json = require("json")
 local sqlite3 = require("sqlite3")
 
 -- Cached module references --
-local _GetField_
-local _GetPixInt_
+local _NewReader_
 
 -- Exports --
 local M = {}
-
--- --
-local Usage = {}
-
---- DOCME
--- @ptable[opt] opts
--- @param name
--- @return V
--- @return S
-function M.GetField (opts, name)
-	local res, message = opts and opts[name]
-
-	if opts then
-		local usage = Usage[name]
-
-		if type(usage) == "table" then
-			local v1, v2 = opts[usage[1]], opts[usage[2]]
-
-			if v1 ~= nil then
-				res = v1
-			elseif v2 ~= nil then
-				res = v2
-			else
-				message = tostring(usage[3])
-			end
-
-		elseif res == nil then
-			res = usage
-		end
-	else
-		message = "Options missing"
-	end
-
-	return res, message or ""
-end
-
---
-local function AddPixUsageTable (pref_name, def_name, message)
-	if message then
-		message = "Missing pixel " .. message
-	else
-		message = "Missing field: <" .. pref_name .. "> or <" .. def_name .. ">"
-	end
-
-	Usage[pref_name] = { pref_name, def_name, message }
-end
 
 -- Add 3 pixels to each side, then add (4 - 1) to round up to next multiple of 4 --
 local Rounding = 3 * 2 + 3
@@ -324,42 +277,6 @@ local function WriteData (MS, method, source, frames, fdimx, fdimy, xdim, ydim, 
 	SetData(MS, data)
 end
 
---- DOCME
--- @ptable opts
--- @string spec_name
--- @string common_name
--- @tparam[opt] ?|string|boolean message
--- @treturn ?|uint|boolean X
-function M.GetPixInt (opts, spec_name, common_name)--, message)
---	assert(opts, "Missing options")
-
-	local int = assert(_GetField_(spec_name, common_name))--opts[spec_name] or opts[common_name]
-
-	assert(IsPosInt(int), "Not a positive integer")
-	--[[
-		assert
-		if message == false then
-			return false
-		elseif type(message) == "string" then
-			assert(false, "Missing pixel " .. message)
-		else
-			assert(false, "Missing field: <" .. spec_name .. "> or <" .. common_name .. ">")
-		end
-	end]]
-
-	return int
-end
-
---
-AddPixUsageTable("npix_cols", "npix", "column count")
-AddPixUsageTable("npix_rows", "npix", "row count")
-AddPixUsageTable("pixw", "pix_dim", "width")
-AddPixUsageTable("pixh", "pix_dim", "height")
-AddPixUsageTable("ncols", "count")
-AddPixUsageTable("nrows", "count")
-AddPixUsageTable("npix_sprite_cols", "npix_sprite")
-AddPixUsageTable("npix_sprite_cols", "npix_sprite")
-
 --
 local function PixAlt (alt, message)
 	return { alt, message = "Missing pixel " .. message }
@@ -368,20 +285,36 @@ end
 -- --
 local Schema = schema.NewSchema{
 	alt_groups = {
-		-- count = {},
-		npix = { PixAlt("npix_cols", "column count"), PixAlt("npix_rows", "row count") },
-		-- npix_sprite = { },
+		count = { "ncols", "nrows" },
+		npix = { PixAlt("_cols", "column count"), PixAlt("_rows", "row count"), prefixed = true },
+		npix_sprite = { "_cols", "_rows", prefixed = true },
 		pix_dim = { PixAlt("pixw", "width"), PixAlt("pixh", "height") }
-	}
+	}, required = true
 }
 
+--- DOCME
+-- @ptable opts
+-- @treturn function X
+function M.NewReader (opts)
+	return schema.NewReader(opts, Schema)
+end
+
 --
-local function GetDim (opts, fdim, dim_name, npix_name)--, message1, message2)
+local function GetPixInt (reader, name)
+	local int = reader(name)
+
+	assert(IsPosInt(int), "Not a positive integer")
+
+	return int
+end
+
+--
+local function GetDim (reader, fdim, dim_name, npix_name)
 	if fdim then
 		return fdim, format("%i", fdim)
 	else
-		local pix_dim = _GetPixInt_(opts, dim_name)--, "pix_dim", message1)
-		local npix = _GetPixInt_(opts, npix_name)--, "npix", message2)
+		local pix_dim = GetPixInt(reader, dim_name)
+		local npix = GetPixInt(reader, npix_name)
 
 		return pix_dim * npix, format("%ip%i", pix_dim, npix)
 	end
@@ -389,30 +322,17 @@ end
 
 --
 local function AuxNewSheet (opts)
-	assert(opts, "Missing options")
-
-	local fdimx, xstr = GetDim(opts, opts.dimx or opts.dim, "pixw", "npix_cols")--, "width", "column count")
-	local fdimy, ystr = GetDim(opts, fdimx or opts.fdimy, "pixh", "npix_rows")--, "height", "row count")
+	local reader = _NewReader_(opts)
+	local fdimx, xstr = GetDim(reader, opts.dimx or opts.dim, "pixw", "npix_cols")
+	local fdimy, ystr = GetDim(reader, fdimx or opts.fdimy, "pixh", "npix_rows")
 	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
 
-	return fdimx, fdimy, format("__%s_%sx%s%s__.png", name, xstr, ystr, id), opts.method, opts.data
+	return reader, fdimx, fdimy, format("__%s_%sx%s%s__.png", name, xstr, ystr, id), opts.method, opts.data
 end
 
 --
 local function BindPatterns (MS, clear, full)
 	MS.m_clear, MS.m_full = clear, full
-end
-
---
-local function CheckGridFields (opts)
-	local n = 0
-
-	n = n + (_GetPixInt_(opts, "ncols", "count") and 1 or 0)
-	n = n + (_GetPixInt_(opts, "nrows", "count") and 1 or 0)
-	n = n + (_GetPixInt_(opts, "npix_sprite_cols", "npix_sprite") and 1 or 0)
-	n = n + (_GetPixInt_(opts, "npix_sprite_rows", "npix_sprite") and 1 or 0)
-
-	assert(n == 0 or n == 4, "Incomplete set of grid fields")
 end
 
 --
@@ -437,14 +357,20 @@ local function GetScales (fdimx, fdimy, w, h)
 	-- (fdimx - 6) / (w - 6)??
 end
 
---- DOCME
--- @ptable opts
--- @treturn MaskSheet MS
-function M.NewSheet (opts)
-	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
+--
+local function NewSheetBody (opts, use_grid)
+	local reader, fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
 	local base_dir = opts.dir or system.CachesDirectory
 	local exists = file.Exists(filename, base_dir)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
+
+	--
+	if use_grid then
+		reader("ncols", "strict")
+		reader("nrows", "strict")
+		reader("npix_sprite_cols", "strict")
+		reader("npix_sprite_rows", "strict")
+	end
 
 	--
 	if exists and not opts.recreate then
@@ -467,7 +393,7 @@ function M.NewSheet (opts)
 		end
 
 		MaskSheet.AddFrame, MaskSheet.Commit, MaskSheet.GetRect, MaskSheet.StashRect = Fail, Fail, Fail, Fail
-		MaskSheet.BindPatterns, MaskSheet.GetData, MaskSheet.GetDataString = BindPatterns, GetData, GetDataString
+		MaskSheet.BindPatterns, MaskSheet.GetData = BindPatterns, GetData
 
 	--
 	else
@@ -590,11 +516,6 @@ function M.NewSheet (opts)
 		-- @return X
 		MaskSheet.GetData = GetData
 
-		--- Getter.
-		-- @function MaskSheet:GetDataString
-		-- @return X
-		MaskSheet.GetDataString = GetDataString
-
 		--- DOCME
 		-- @pgroup group
 		-- @number x
@@ -654,14 +575,23 @@ function M.NewSheet (opts)
 		end
 	end
 
-	return MaskSheet
+	return MaskSheet, reader
 end
 
 --- DOCME
 -- @ptable opts
 -- @treturn MaskSheet MS
+-- @treturn function READER
+function M.NewSheet (opts)
+	return NewSheetBody(opts, false)
+end
+
+--- DOCME
+-- @ptable opts
+-- @treturn MaskSheet MS
+-- @treturn function READER
 function M.NewSheet_Data (opts)
-	local fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
+	local reader, fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
 	local MaskSheet_Data, frames = {}, {}
 
 	--
@@ -710,7 +640,15 @@ function M.NewSheet_Data (opts)
 		return frames == nil
 	end
 
-	return MaskSheet_Data
+	return MaskSheet_Data, reader
+end
+
+--- DOCME
+-- @ptable opts
+-- @treturn MaskSheet MS
+-- @treturn function READER
+function M.NewSheet_Grid (opts)
+	return NewSheetBody(opts, true)
 end
 
 --- DOCME
@@ -742,8 +680,7 @@ function M.SetDynamicMask (object, w, h)
 end
 
 -- Cache module members.
-_GetField_ = M.GetField
-_GetPixInt_ = M.GetPixInt
+_NewReader_ = M.NewReader
 
 -- Export the module.
 return M
