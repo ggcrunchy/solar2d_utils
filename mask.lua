@@ -234,7 +234,7 @@ end
 
 --
 local function AuxWrite (db, tname, filename, data)
-	sqlite_db.InsertOrReplaceKeyData(db, tname, filename, data, true)
+	sqlite_db.InsertOrReplace_KeyData(db, tname, filename, data)
 end
 
 --

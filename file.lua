@@ -365,12 +365,8 @@ local function PopulateDatabase (path, popts)
 end
 
 --- DOCME
+-- @function PathForFile
 M.PathForFile = PathForFile
-
-
-
-
-
 
 --
 local function AddSlash (str)

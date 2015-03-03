@@ -70,7 +70,7 @@ local function OpenDB_Ex (what, file)
 	local db, info = OpenDB(file or "data"), Info[what]
 
 	if info and not Loaded[what] then
-		local setup = [[CREATE TABLE IF NOT EXISTS ]] .. what .. [[ (]] .. info.schema .. [[); BEGIN;]]
+		local setup = [[CREATE TABLE IF NOT EXISTS ]] .. what .. [[ (]] .. info.columns .. [[); BEGIN;]]
 
 		for _, item in ipairs(info) do
 			setup = setup .. [[INSERT OR IGNORE INTO ]] .. what .. [[ VALUES(]] .. item .. [[);]]
@@ -95,7 +95,7 @@ local function Commit (what, changes)
 end
 
 -- Configuration state --
-Info.config = { schema = [[m_KEY UNIQUE, m_VALUE]] }
+Info.config = { columns = [[m_KEY UNIQUE, m_VALUE]] }
 
 for i, v in ipairs(pconfig) do
 	Info.config[i] = v
@@ -213,10 +213,10 @@ function M.GetConfig ()
 end
 
 -- Ready-to-run editor levels --
-Info.levels = { schema = [[m_KEY UNIQUE, m_VALUE, m_OMIT]] }
+Info.levels = { columns = [[m_KEY UNIQUE, m_VALUE, m_OMIT]] }
 
 -- Work-in-progress editor levels --
-Info.level_wips = { schema = [[m_KEY UNIQUE, m_VALUE, m_OMIT]] }
+Info.level_wips = { columns = [[m_KEY UNIQUE, m_VALUE, m_OMIT]] }
 
 -- Helper to get levels table name
 local function TableName (wip)
