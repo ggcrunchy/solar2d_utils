@@ -267,20 +267,19 @@ local function WriteData (MS, method, source, frames, fdimx, fdimy, xdim, ydim, 
 	SetData(MS, data)
 end
 
---
-local function PixAlt (alt, message)
-	return { alt, message = "pixel " .. message }
-end
-
 -- --
 local Schema = schema.NewSchema{
 	alt_groups = {
-		count = { "ncols", "nrows" },
-		npix = { PixAlt("_cols", "column count"), PixAlt("_rows", "row count"), prefixed = true },
-		npix_sprite = { "_cols", "_rows", prefixed = true },
-		pix_dim = { PixAlt("pixw", "width"), PixAlt("pixh", "height") }
-	}, def_predicate = IsPosInt, def_required = true
+		count = { "ncols", "nrows", prefixed = { "grid_", "cell_" } },
+		dim = { "w", "h", prefixed = { "frame_unit_", "sprite_" }
+	},
+	null_ok = { "grid_w", "grid_h" }, def_predicate = IsPosInt, def_required = true
 }
+
+-- grid_ncols, grid_nrows, grid_count = used by the grid itself (count)
+-- cell_ncols, cell_nrows, cell_count = per cell (npix)
+-- frame_unit_w, frame_unit_h, frame_unit_dim = while generating frames ()
+-- sprite_w, sprite_h, sprite_dim = in use ()
 
 --- DOCME
 -- @ptable opts
@@ -290,21 +289,21 @@ function M.NewReader (opts)
 end
 
 --
-local function GetDim (reader, fdim, dim_name, npix_name)
+local function GetDim (reader, fdim, unit_dim_name, cell_count_name)
 	if fdim then
 		return fdim, format("%i", fdim)
 	else
-		local pix_dim, npix = reader(dim_name), reader(npix_name)
+		local nunits, count = reader(unit_dim_name), reader(cell_count_name)
 
-		return pix_dim * npix, format("%ip%i", pix_dim, npix)
+		return nunits * count, format("%ip%i", nunits, count)
 	end
 end
 
 --
 local function AuxNewSheet (opts)
 	local reader = _NewReader_(opts)
-	local fdimx, xstr = GetDim(reader, opts.dimx or opts.dim, "pixw", "npix_cols")
-	local fdimy, ystr = GetDim(reader, fdimx or opts.fdimy, "pixh", "npix_rows")
+	local fdimx, xstr = GetDim(reader, opts.dimx or opts.dim, "frame_unit_w", "cell_ncols")
+	local fdimy, ystr = GetDim(reader, fdimx or opts.fdimy, "frame_unit_h", "cell_nrows")
 	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
 
 	return reader, fdimx, fdimy, format("__%s_%sx%s%s__.png", name, xstr, ystr, id), opts.method, opts.data
@@ -346,10 +345,18 @@ local function NewSheetBody (opts, use_grid)
 
 	--
 	if use_grid then
-		reader("ncols", "strict")
-		reader("nrows", "strict")
-		reader("npix_sprite_cols", "strict")
-		reader("npix_sprite_rows", "strict")
+		local gw, gh = opts.grid_w, opts.grid_h
+
+		if not reader("grid_w") then
+			reader("grid_ncols")
+		else
+
+		if not reader("grid_h") then
+			reader("grid_nrows")
+		else
+
+		reader("sprite_w")
+		reader("sprite_h")
 	end
 
 	--
