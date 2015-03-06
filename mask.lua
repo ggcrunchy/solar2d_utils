@@ -355,7 +355,7 @@ end
 local function SetMask (MS, mask, frames, object, index, xscale, yscale)
 	assert(mask, "Mask not ready")
 
-	local not_clear = index ~= MS.m_clear
+	local not_clear, frame = index ~= MS.m_clear, frames[index]
 
 	object.isVisible = not_clear
 
@@ -365,13 +365,13 @@ local function SetMask (MS, mask, frames, object, index, xscale, yscale)
 			object:setMask(nil)
 
 		-- Otherwise, apply the mask at the given frame.
-		else
+		elseif frame then
 			object:setMask(mask)
 
-			local x, y = unpack(frames[index])
+			local x, y = unpack(frame)
 
-			object.maskX, object.maskScaleX = x * xscale, xscale
-			object.maskY, object.maskScaleY = y * yscale, yscale
+		--	object.maskX, object.maskScaleX = x, 1-- * xscale, xscale
+		--	object.maskY, object.maskScaleY = y, 1-- * yscale, yscale
 			-- ^^ ceil()?
 		end
 	end
