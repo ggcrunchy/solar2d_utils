@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local assert = assert
+local ceil = math.ceil
 local format = string.format
 local floor = math.floor
 local remove = os.remove
@@ -35,6 +36,7 @@ local unpack = unpack
 -- Modules --
 local capture = require("corona_utils.capture")
 local file = require("corona_utils.file")
+local grid_funcs = require("tektite_core.array.grid")
 local schema = require("tektite_core.table.schema")
 local sqlite_db = require("tektite_core.sqlite_db")
 local var_preds = require("tektite_core.var.predicates")
@@ -267,19 +269,32 @@ local function WriteData (MS, method, source, frames, fdimx, fdimy, xdim, ydim, 
 	SetData(MS, data)
 end
 
+--
+local function CountFromDim (grid_dim, sprite_dim)
+	return ceil(grid_dim / sprite_dim)
+end
+
 -- --
+-- grid_ncols, grid_nrows, grid_count: counts used by the grid itself, def = ceil(grid_? / sprite_?) | ? = w or h
+-- cell_ncols, cell_nrows, cell_count: per cell counts
+-- frame_unit_w, frame_unit_h, frame_unit_dim: sheet frame dimensions
+-- sprite_w, sprite_h, sprite_dim: in-use sprite dimensions
 local Schema = schema.NewSchema{
+	-- --
 	alt_groups = {
 		count = { "ncols", "nrows", prefixed = { "grid_", "cell_" } },
-		dim = { "w", "h", prefixed = { "frame_unit_", "sprite_" }
+		dim = { "w", "h", prefixed = { "frame_unit_", "sprite_" } },
 	},
-	null_ok = { "grid_w", "grid_h" }, def_predicate = IsPosInt, def_required = true
-}
 
--- grid_ncols, grid_nrows, grid_count = used by the grid itself (count)
--- cell_ncols, cell_nrows, cell_count = per cell (npix)
--- frame_unit_w, frame_unit_h, frame_unit_dim = while generating frames ()
--- sprite_w, sprite_h, sprite_dim = in use ()
+	-- --
+	def_val_funcs = {
+		grid_ncols = { CountFromDim, "grid_w", "sprite_w" },
+		grid_nrows = { CountFromDim, "grid_h", "sprite_h" }
+	},
+
+	-- --
+	def_predicate = IsPosInt, def_required = true
+}
 
 --- DOCME
 -- @ptable opts
@@ -290,7 +305,7 @@ end
 
 --
 local function GetDim (reader, fdim, unit_dim_name, cell_count_name)
-	if fdim then
+	if fdim then -- TODO: what is this for?
 		return fdim, format("%i", fdim)
 	else
 		local nunits, count = reader(unit_dim_name), reader(cell_count_name)
@@ -303,7 +318,7 @@ end
 local function AuxNewSheet (opts)
 	local reader = _NewReader_(opts)
 	local fdimx, xstr = GetDim(reader, opts.dimx or opts.dim, "frame_unit_w", "cell_ncols")
-	local fdimy, ystr = GetDim(reader, fdimx or opts.fdimy, "frame_unit_h", "cell_nrows")
+	local fdimy, ystr = GetDim(reader, opts.dimy or opts.dim, "frame_unit_h", "cell_nrows")
 	local name, id = assert(opts.name, "Missing filename"), opts.id and ("_id_" .. tostring(opts.id)) or ""
 
 	return reader, fdimx, fdimy, format("__%s_%sx%s%s__.png", name, xstr, ystr, id), opts.method, opts.data
@@ -337,6 +352,32 @@ local function GetScales (fdimx, fdimy, w, h)
 end
 
 --
+local function SetMask (MS, mask, frames, object, index, xscale, yscale)
+	assert(mask, "Mask not ready")
+
+	local not_clear = index ~= MS.m_clear
+
+	object.isVisible = not_clear
+
+	if not_clear then -- non-visible cells are fine as is
+		-- If a cell is full, there is nothing to mask.
+		if index == MS.m_full then
+			object:setMask(nil)
+
+		-- Otherwise, apply the mask at the given frame.
+		else
+			object:setMask(mask)
+
+			local x, y = unpack(frames[index])
+
+			object.maskX, object.maskScaleX = x * xscale, xscale
+			object.maskY, object.maskScaleY = y * yscale, yscale
+			-- ^^ ceil()?
+		end
+	end
+end
+
+--
 local function NewSheetBody (opts, use_grid)
 	local reader, fdimx, fdimy, filename, method, data = AuxNewSheet(opts)
 	local base_dir = opts.dir or system.CachesDirectory
@@ -344,19 +385,16 @@ local function NewSheetBody (opts, use_grid)
 	local MaskSheet, frames, mask, xscale, yscale = {}, {}
 
 	--
+	local cells, layout, bcols, brows = opts.cells, opts.layout
+
 	if use_grid then
-		local gw, gh = opts.grid_w, opts.grid_h
-
-		if not reader("grid_w") then
-			reader("grid_ncols")
-		else
-
-		if not reader("grid_h") then
-			reader("grid_nrows")
-		else
+		bcols = reader("grid_ncols", "cache")
+		brows = reader("grid_nrows", "cache")
 
 		reader("sprite_w")
 		reader("sprite_h")
+
+		assert(type(cells) == "table", "Missing grid cells")
 	end
 
 	--
@@ -538,26 +576,20 @@ local function NewSheetBody (opts, use_grid)
 	-- @pobject object
 	-- @param index
 	function MaskSheet:Set (object, index)
-		assert(mask, "Mask not ready")
+		SetMask(self, mask, frames, object, index, xscale, yscale)
+	end
 
-		local not_clear = index ~= self.m_clear
+	if use_grid then
+		--- DOCME
+		-- @uint col
+		-- @uint row
+		-- @param index
+		function MaskSheet:Set_Cell (col, row, index)
+			local gindex = grid_funcs.CellToIndex_Layout(col, row, bcols, brows, layout)
+			local object = cells[gindex]
 
-		object.isVisible = not_clear
-
-		if not_clear then -- non-visible cells are fine as is
-			-- If a cell is full, there is nothing to mask.
-			if index == self.m_full then
-				object:setMask(nil)
-
-			-- Otherwise, apply the mask at the given frame.
-			else
-				object:setMask(mask)
-
-				local x, y = unpack(frames[index])
-
-				object.maskX, object.maskScaleX = x * xscale, xscale
-				object.maskY, object.maskScaleY = y * yscale, yscale
-				-- ^^ ceil()?
+			if object then
+				SetMask(self, mask, frames, object, index, xscale, yscale)
 			end
 		end
 	end
