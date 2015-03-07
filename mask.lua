@@ -348,7 +348,7 @@ end
 
 --
 local function GetScales (fdimx, fdimy, w, h)
-	-- (fdimx - 6) / (w - 6)??
+	return w / fdimx, h / fdimy
 end
 
 --
@@ -370,8 +370,8 @@ local function SetMask (MS, mask, frames, object, index, xscale, yscale)
 
 			local x, y = unpack(frame)
 
-		--	object.maskX, object.maskScaleX = x, 1-- * xscale, xscale
-		--	object.maskY, object.maskScaleY = y, 1-- * yscale, yscale
+			object.maskX, object.maskScaleX = ceil(x * xscale), xscale
+			object.maskY, object.maskScaleY = ceil(y * yscale), yscale
 			-- ^^ ceil()?
 		end
 	end
@@ -386,13 +386,13 @@ local function NewSheetBody (opts, use_grid)
 
 	--
 	local cells, layout, bcols, brows = opts.cells, opts.layout
-
+local ww, hh
 	if use_grid then
 		bcols = reader("grid_ncols", "cache")
 		brows = reader("grid_nrows", "cache")
 
-		reader("sprite_w")
-		reader("sprite_h")
+		ww = reader("sprite_w")
+		hh = reader("sprite_h")
 
 		assert(type(cells) == "table", "Missing grid cells")
 	end
@@ -410,7 +410,7 @@ local function NewSheetBody (opts, use_grid)
 
 	if ms_data then
 		mask, frames = graphics.newMask(filename, base_dir), ToFrameMap(ms_data.frames)
-		xscale, yscale = GetScales(fdimx, fdimy, ms_data.xdim, ms_data.ydim)
+		xscale, yscale = GetScales(fdimx, fdimy, ww, hh)--ms_data.xdim, ms_data.ydim)
 
 		-- Add dummy and non-closure methods.
 		local function Fail ()
@@ -432,7 +432,7 @@ local function NewSheetBody (opts, use_grid)
 		-- Compute the offset as the 3 pixels of black border plus any padding needed to satisfy
 		-- the height requirement. Bounded captures will be used to grab each frame, since using
 		-- several containers and capturing all in one go seems to be flaky on the simulator.
-		local back, into = BlackRect(display.getCurrentStage(), nil, 0, 0, fdimx, fdimy), opts.into
+		local back, into = NewRect(display.getCurrentStage(), nil, 0, 0, fdimx, fdimy), opts.into
 		local mgroup, stash = display.newGroup(), display.newGroup()
 
 		stash.isVisible = false
@@ -472,6 +472,8 @@ local function NewSheetBody (opts, use_grid)
 			frames[#frames + 1] = y
 
 			--
+			cgroup:insert(back)
+
 			func(cgroup, 1 - bg, fdimx, fdimy, index)
 
 			-- Capture the frame and incorporate it into the built-up mask.
@@ -482,8 +484,20 @@ local function NewSheetBody (opts, use_grid)
 			})
 
 			mgroup:insert(fcap)
-
+--[[
+AAA=(AAA or 0)+1
+if AAA<4 then
+vdump(fcap.contentBounds)
+display.getCurrentStage():insert(fcap)
+else
+X[7]=2
+end
+--]]
 			yfunc()
+
+--print(require("tektite_core.number.to_string").Binary(xx, 4, true))
+
+			cgroup.parent:insert(back)
 
 			--
 			if after then
