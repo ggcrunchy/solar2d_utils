@@ -27,7 +27,7 @@
 local abs = math.abs
 
 -- Corona globals --
-local system = system
+--local system = system
 
 -- Cached module references --
 local _GetFrameID_
@@ -39,7 +39,7 @@ local M = {}
 local FrameID = 0
 
 -- Frame difference; last frame time --
-local Diff, Last = 0
+local Diff, Last = 0, 0
 
 --- Getter.
 -- @treturn number Difference in time since last frame.

@@ -29,6 +29,7 @@ local max = math.max
 
 -- Modules --
 local file = require("corona_utils.file")
+local frames = require("corona_utils.frames")
 local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
@@ -57,6 +58,13 @@ local Sheet = { frames = { SheetFrame } }
 -- @ptable[opt] opts
 -- @treturn DisplayObject X
 function M.CaptureBounds (group, bounds, opts)
+	local yfunc = opts and opts.yfunc or DefYieldFunc
+
+	-- Sanity check: if this might be an early frame, attempt to yield.
+	if frames.GetFrameID() < 5 then
+		yfunc()
+	end
+
 	-- Contents are visible: just capture the bounds directly.
 	if not (opts and opts.hidden) then
 		return display.captureBounds(bounds)
@@ -70,7 +78,6 @@ function M.CaptureBounds (group, bounds, opts)
 		-- Out-of-bounds: make an intermediate image and capture that.
 		else
 			local w, h = opts and opts.w or display.contentWidth, opts and opts.h or display.contentHeight
-			local yfunc = opts and opts.yfunc or DefYieldFunc
 			local base_dir = opts and opts.base_dir or system.DocumentsDirectory
 
 			-- Move the group fully on screen, detecting too-large cases.
@@ -87,9 +94,9 @@ function M.CaptureBounds (group, bounds, opts)
 
 			yfunc()
 
-			-- Create a one-frame image sheet, where the frame is positioned over the bounded part of
-			-- the content. Reload it as a sprite (in the group's parent), then capture and return it.
-			-- Since the image is a temporary resource, queue it up for subsequent removal.
+			-- Create a one-frame image sheet, with the group positioned over the bounded part of the
+			-- content. Using this sheet, load (and return) the just-saved image. Since the image is
+			-- only needed temporary, queue it up for subsequent removal.
 			SheetFrame.x, SheetFrame.width = movex, bounds.xMax - bounds.xMin
 			SheetFrame.y, SheetFrame.height = movey, bounds.yMax - bounds.yMin
 
