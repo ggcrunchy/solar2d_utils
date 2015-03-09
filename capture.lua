@@ -30,11 +30,11 @@ local max = math.max
 -- Modules --
 local file = require("corona_utils.file")
 local frames = require("corona_utils.frames")
+local sheet_utils = require("corona_utils.sheet")
 local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
 local display = display
-local graphics = graphics
 local system = system
 
 -- Cached module references --
@@ -45,12 +45,6 @@ local M = {}
 
 -- Default yield function: no-op
 local function DefYieldFunc () end
-
--- Configurable frame --
-local SheetFrame = {}
-
--- Single-frame sheet used to confine capture --
-local Sheet = { frames = { SheetFrame } }
 
 --- DOCME
 -- @pgroup group
@@ -76,6 +70,7 @@ function M.CaptureBounds (group, bounds, opts)
 			return display.capture(group)
 
 		-- Out-of-bounds: make an intermediate image and capture that.
+		-- TODO: Seems amenable to snapshot!
 		else
 			local w, h = opts and opts.w or display.contentWidth, opts and opts.h or display.contentHeight
 			local base_dir = opts and opts.base_dir or system.DocumentsDirectory
@@ -97,10 +92,7 @@ function M.CaptureBounds (group, bounds, opts)
 			-- Create a one-frame image sheet, with the group positioned over the bounded part of the
 			-- content. Using this sheet, load (and return) the just-saved image. Since the image is
 			-- only needed temporary, queue it up for subsequent removal.
-			SheetFrame.x, SheetFrame.width = movex, bounds.xMax - bounds.xMin
-			SheetFrame.y, SheetFrame.height = movey, bounds.yMax - bounds.yMin
-
-			local sheet = graphics.newImageSheet(name, base_dir, Sheet)
+			local sheet = sheet_utils.SingleFrame(name, movex, movey, bounds.contentWidth, bounds.contentHeight, base_dir)
 			local image = display.newImage(group.parent, sheet, 1)
 
 			file.PutInTrash_Guard(name, image, base_dir)
