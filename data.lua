@@ -25,29 +25,13 @@
 
 -- Standard library imports --
 local type = type
-local unpack = unpack
 
 -- Modules --
-local capture = require("corona_utils.capture")
-local file = require("corona_utils.file")
-local grid_funcs = require("tektite_core.array.grid")
-local mask_utils = require("corona_mask.utils")
-local schema = require("tektite_core.table.schema")
 local sqlite_db = require("tektite_core.sqlite_db")
-local var_preds = require("tektite_core.var.predicates")
-
--- Corona globals --
-local display = display
-local graphics = graphics
-local system = system
 
 -- Corona modules --
 local json = require("json")
 local sqlite3 = require("sqlite3")
-
--- Cached module references --
-local _GetData_
-local _SetData_
 
 -- Exports --
 local M = {}
