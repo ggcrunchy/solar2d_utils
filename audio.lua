@@ -43,11 +43,20 @@ local audio = require("audio")
 -- Exports --
 local M = {}
 
+-- --
+local IsQuiet
+
+--- Enable or disable audio. When disabled, calls from this module will be no-ops.
+-- @bool enable Enable audio logic?
+function M.Enable (enable)
+	IsQuiet = not enable
+end
+
 -- Common play logic
 local function AuxPlay (group, handles, name)
 	local handle = handles[name]
 
-	if handle --[[and SoundOn]] then
+	if handle and not IsQuiet then
 		local info = group.m_info[name]
 
 		if info.m_wait then
