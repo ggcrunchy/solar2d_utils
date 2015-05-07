@@ -68,7 +68,7 @@ local PathForFile = system.pathForFile
 if OnSimulator then
 	function PathForFile (name, base)
 		if IsResourceDir(base) then
-			return system.pathForFile("") .. name
+			return system.pathForFile("") .. "/" .. name
 		else
 			return system.pathForFile(name, base)
 		end
