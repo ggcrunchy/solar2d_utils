@@ -30,15 +30,17 @@ local pairs = pairs
 local random = math.random
 local type = type
 
+-- Extension imports --
+local indexOf = table.indexOf
+
 -- Modules --
+local array_funcs = require("tektite_core.array.funcs")
 local file = require("corona_utils.file")
 
 -- Corona globals --
+local audio = audio
 local system = system
 local timer = timer
-
--- Corona modules --
-local audio = require("audio")
 
 -- Exports --
 local M = {}
@@ -52,9 +54,22 @@ function M.Enable (enable)
 	IsQuiet = not enable
 end
 
+--
+local function RemoveDeadChannels (channels)
+	local n = #channels
+
+	for i = n, 1, -1 do
+		if not audio.isChannelActive(channels[i]) then
+			array_funcs.Backfill(channels, i)
+		end
+	end
+end
+
 -- Common play logic
 local function AuxPlay (group, handles, name)
-	local handle = handles[name]
+	local channels, handle = group.m_channels, handles[name]
+
+	RemoveDeadChannels(channels)
 
 	if handle and not IsQuiet then
 		local info = group.m_info[name]
@@ -69,23 +84,45 @@ local function AuxPlay (group, handles, name)
 			end
 		end
 
-		audio.play(handle)
+		channels[#channels + 1] = audio.play(handle)
 	end
 end
 
 -- Plays a bit of audio (unless it has already played too recently)
 local function Play (group, handles, name, delay)
-	local thandle
+	local play_timer
 
 	if delay then
-		thandle = timer.performWithDelay(delay, function()
+		play_timer = timer.performWithDelay(delay, function()
 			AuxPlay(group, handles, name)
 		end)
 	else
 		AuxPlay(group, handles, name)
 	end
 
-	return thandle
+	return play_timer
+end
+
+--
+local function ClearChannels (group)
+	local channels = group.m_channels
+
+	for i = #channels, 1, -1 do
+		if audio.isChannelActive(channels[i]) then
+			audio.stop(channels[i])
+		end
+
+		channels[i] = nil
+	end
+end
+
+--
+local function ClearHandles (handles)
+	if handles then
+		for _, v in pairs(handles) do
+			audio.dispose(v)
+		end
+	end
 end
 
 -- Groups of related audio, e.g. all sounds related to a type of object --
@@ -94,7 +131,7 @@ local Groups = {}
 -- Common logic for making a sound group
 local function AuxNewSoundGroup (info)
 	-- Streamline the sounds list into a group.
-	local SoundGroup = { m_info = info }
+	local SoundGroup = { m_channels = {}, m_info = info }
 
 	--- Initializes a group. This must be called before the group is used to play any sounds.
 	--
@@ -117,6 +154,18 @@ local function AuxNewSoundGroup (info)
 	-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
 	function SoundGroup:PlaySound (name, delay)
 		return Play(self, assert(self.m_handles, "Sound group not loaded"), name, delay)
+	end
+
+	--- DOCME
+	function SoundGroup:Remove ()
+		local index = indexOf(Groups, self)
+
+		if index then
+			ClearChannels(self.m_channels)
+			ClearHandles(self.m_handles)
+
+			array_funcs.Backfill(Groups, index)
+		end
 	end
 
 	--- If the group has an array part, plays one of its sounds.
@@ -184,12 +233,14 @@ function M.NewSoundGroup_Multi (arr)
 	return AuxNewSoundGroup(info)
 end
 
--- TODO: Enable / disable audio
 -- TODO: Menu audio
 
 -- Leave Level response
 local function LeaveLevel ()
 	for _, group in ipairs(Groups) do
+		ClearChannels(group.m_channels)
+		ClearHandles(group.m_handles)
+
 		group.m_handles = nil
 	end
 end
@@ -205,6 +256,8 @@ for k, v in pairs{
 	-- Reset Level --
 	reset_level = function()
 		for _, group in ipairs(Groups) do
+			ClearChannels(group.m_channels)
+
 			for _, sinfo in pairs(group.m_info) do
 				sinfo.time = nil
 			end
