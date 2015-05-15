@@ -104,9 +104,7 @@ local function Play (group, handles, name, delay)
 end
 
 --
-local function ClearChannels (group)
-	local channels = group.m_channels
-
+local function ClearChannels (channels)
 	for i = #channels, 1, -1 do
 		if audio.isChannelActive(channels[i]) then
 			audio.stop(channels[i])
