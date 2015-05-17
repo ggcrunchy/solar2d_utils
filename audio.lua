@@ -28,6 +28,7 @@ local assert = assert
 local ipairs = ipairs
 local pairs = pairs
 local random = math.random
+local tonumber = tonumber
 local type = type
 
 -- Extension imports --
@@ -65,15 +66,23 @@ local function RemoveDeadChannels (channels)
 	end
 end
 
+-- --
+local Opts = {}
+
 -- Common play logic
 local function AuxPlay (group, handles, name)
-	local channels, handle = group.m_channels, handles[name]
+	local channels = group.m_channels
 
+	--
 	RemoveDeadChannels(channels)
 
-	if handle and not IsQuiet then
+	--
+	local handle = handles[name]
+
+	if handle then
 		local info = group.m_info[name]
 
+		--
 		if info.m_wait then
 			local now = system.getTimer()
 
@@ -84,7 +93,33 @@ local function AuxPlay (group, handles, name)
 			end
 		end
 
-		channels[#channels + 1] = audio.play(handle)
+		--
+		local complete = info.m_on_complete
+
+		if not IsQuiet then
+			local nloops, opts = info.m_loop_count
+
+			if nloops or complete then
+				Opts.loops, Opts.onComplete, opts = nloops, complete, opts
+			end
+
+			channels[#channels + 1] = audio.play(handle, opts)
+
+		-- If audio is off, but the sound still has on-complete logic, approximate the play
+		-- time with a timer, and be ready to handle stops.
+		elseif complete then
+			local qs, state, nloops = group.m_quiet_state or {}, { complete = complete }, info.m_loop_count or 1
+
+			if nloops > 0 then
+				state.timer = timer.performWithDelay(nloops * audio.getDuration(handle), function()
+					complete(true)
+
+					state.complete, state.timer = nil
+				end)
+			end
+
+			qs[#qs + 1], group.m_quiet_state = state, qs
+		end
 	end
 end
 
@@ -104,17 +139,6 @@ local function Play (group, handles, name, delay)
 end
 
 --
-local function ClearChannels (channels)
-	for i = #channels, 1, -1 do
-		if audio.isChannelActive(channels[i]) then
-			audio.stop(channels[i])
-		end
-
-		channels[i] = nil
-	end
-end
-
---
 local function ClearHandles (handles)
 	if handles then
 		for _, v in pairs(handles) do
@@ -131,6 +155,29 @@ local function AuxNewSoundGroup (info)
 	-- Streamline the sounds list into a group.
 	local SoundGroup = { m_channels = {}, m_info = info }
 
+	--- DOCME
+	function SoundGroup:IsActive ()
+		if IsQuiet then
+			local qs = self.m_quiet_state
+
+			for i = 1, #(qs or "") do
+				if qs[i].complete then
+					return true
+				end
+			end
+		else
+			local channels = self.m_channels
+
+			for i = 1, #channels do
+				if audio.isChannelActive(channels[i]) then
+					return true
+				end
+			end
+		end
+
+		return false
+	end
+
 	--- Initializes a group. This must be called before the group is used to play any sounds.
 	--
 	-- After loading, this will be a no-op until the level is unloaded.
@@ -139,10 +186,35 @@ local function AuxNewSoundGroup (info)
 			local handles = {}
 
 			for k, sinfo in pairs(self.m_info) do
-				handles[k] = audio.loadSound(sinfo.m_file, sinfo.m_base)
+				local func = sinfo.m_is_streaming and "loadStream" or "loadSound"
+
+				handles[k] = audio[func](sinfo.m_file, sinfo.m_base)
 			end
 
 			self.m_handles = handles
+		end
+	end
+
+	--- DOCME
+	function SoundGroup:PauseAll ()
+		if IsQuiet then
+			local qs = self.m_quiet_state
+
+			for i = 1, #(qs or "") do
+				local state = qs[i]
+
+				if state.timer and not state.is_paused then
+					timer.pause(state.timer)
+
+					state.is_paused = true
+				end
+			end
+		else
+			for _, channel in ipairs(self.m_channels) do
+				if audio.isChannelPlaying(channel) then
+					audio.pause(channel)
+				end
+			end
 		end
 	end
 
@@ -154,18 +226,6 @@ local function AuxNewSoundGroup (info)
 		return Play(self, assert(self.m_handles, "Sound group not loaded"), name, delay)
 	end
 
-	--- DOCME
-	function SoundGroup:Remove ()
-		local index = indexOf(Groups, self)
-
-		if index then
-			ClearChannels(self.m_channels)
-			ClearHandles(self.m_handles)
-
-			array_funcs.Backfill(Groups, index)
-		end
-	end
-
 	--- If the group has an array part, plays one of its sounds.
 	-- @uint[opt] delay Optional delay, in milliseconds, before playing.
 	-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
@@ -175,6 +235,77 @@ local function AuxNewSoundGroup (info)
 		return Play(self, handles, random(#handles), delay)
 	end
 
+	--- DOCME
+	function SoundGroup:Remove ()
+		local index = indexOf(Groups, self)
+
+		if index then
+			self:StopAll()
+
+			ClearHandles(self.m_handles)
+
+			array_funcs.Backfill(Groups, index)
+		end
+	end
+
+	--- DOCME
+	function SoundGroup:ResumeAll ()
+		if IsQuiet then
+			local qs = self.m_quiet_state
+
+			for i = 1, #(qs or "") do
+				local state = qs[i]
+
+				if state.timer and state.is_paused then
+					timer.resume(state.timer)
+
+					state.is_paused = false
+				end
+			end
+		else
+			for _, channel in ipairs(self.m_channels) do
+				if audio.isChannelPaused(channel) then
+					audio.resume(channel)
+				end
+			end
+		end
+	end
+
+	-- Rewind?
+
+	--- DOCME
+	function SoundGroup:StopAll ()
+		if IsQuiet then
+			local qs = self.m_quiet_state
+
+			for i = #(qs or ""), 1, -1 do
+				local state = qs[i]
+
+				if state.timer then
+					timer.cancel(state.timer)
+				end
+
+				if state.complete then
+					state.complete(false)
+				end
+
+				qs[i] = nil
+			end
+
+		else
+			local channels = self.m_channels
+
+			for i = #channels, 1, -1 do
+				if audio.isChannelActive(channels[i]) then
+					audio.stop(channels[i])
+				end
+
+				channels[i] = nil
+			end
+		end
+	end
+
+	--
 	Groups[#Groups + 1] = SoundGroup
 
 	return SoundGroup
@@ -189,7 +320,24 @@ local function AddItem (name, sinfo, prefix, base, info)
 	else
 		assert(itype == "table", "Non-table sound info")
 
-		info[name] = { m_file = prefix .. sinfo.file, m_base = base, m_wait = sinfo.wait }
+		local nloops
+
+		if sinfo.loops == "forever" then
+			nloops = -1
+		else
+			nloops = tonumber(sinfo.loops)
+
+			assert(nloops ~= 0, "Bad loop count")
+		end
+
+		info[name] = {
+			m_base = base,
+			m_file = prefix .. sinfo.file,
+			m_is_streaming = not not sinfo.streaming,
+			m_loop_count = nloops,
+			m_on_complete = sinfo.on_complete,
+			m_wait = sinfo.wait
+		}
 	end
 end
 
@@ -208,9 +356,12 @@ end
 -- Otherwise, the value must be a table, and the filename is instead found at the **file**
 -- key. Optional members include:
 --
+-- * **loops**: Number of times to loop, or **"forever"** to loop indefinitely.
+-- * **is_streaming**: Boolean: Is this a streaming sound?
+-- * **on_complete**: Callable. Called as `on_complete(done)` when the sound has finished
+-- playing, with _done_ being true if the sound completed normally.
 -- * **wait**: A delay, in milliseconds. Attempts to play the sound again are ignored until
 -- this interval has elapsed.
--- it is ignored.
 -- @treturn table Sound group object.
 function M.NewSoundGroup (sounds)
 	local info = {}
@@ -236,7 +387,8 @@ end
 -- Leave Level response
 local function LeaveLevel ()
 	for _, group in ipairs(Groups) do
-		ClearChannels(group.m_channels)
+		group:StopAll()
+
 		ClearHandles(group.m_handles)
 
 		group.m_handles = nil
@@ -254,7 +406,7 @@ for k, v in pairs{
 	-- Reset Level --
 	reset_level = function()
 		for _, group in ipairs(Groups) do
-			ClearChannels(group.m_channels)
+			group:StopAll()
 
 			for _, sinfo in pairs(group.m_info) do
 				sinfo.time = nil
