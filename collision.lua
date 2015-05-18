@@ -201,7 +201,7 @@ end
 local function Check (object)
 	if IsHidden[object] == nil then
 		object:addEventListener("finalize", WipeState)
-		-- ^^^ BUGGY: only seems to work for manually removeSelf()'d objects, not children :/
+
 		IsHidden[object] = false
 	end
 end
