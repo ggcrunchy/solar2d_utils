@@ -46,7 +46,7 @@ function M.GetSpriteSetImageFrame (image)
 end
 
 -- Detection for multisheet sprites --
-local IsMultiSheet = setmetatable({}, { __index = "k" })
+local IsMultiSheet = setmetatable({}, { __mode = "k" })
 
 --
 local function AuxNewImage (group, images, x, y, w, h, frame)
