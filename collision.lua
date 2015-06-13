@@ -264,7 +264,7 @@ end
 
 --- DOCME
 function M.DoOrDefer (object, other, phase, func)
-	if object ~= other and object.parent and other.parent then
+	if object ~= other and object.removeSelf ~= nil and other.removeSelf ~= nil then -- object, other still valid?
 		-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
 		-- action; otherwise, perform it immediately.
 		if phase == "began" then
@@ -401,7 +401,7 @@ end
 --- DOCME
 function M.SetVisibility (object, show)
 	--
-	if object.parent then
+	if object.removeSelf ~= nil then -- object still valid?
 		local hide = not show
 
 		--
@@ -414,7 +414,7 @@ function M.SetVisibility (object, show)
 
 			for i = #(list1 or "") - 1, 1, -2 do
 				local other = list1[i]
-				local intact = other.parent
+				local intact = other.removeSelf ~= nil
 
 				if not (intact and IsHidden[other]) then
 					list1[ni], ni = i, ni - 1

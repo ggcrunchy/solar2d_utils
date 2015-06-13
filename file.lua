@@ -434,7 +434,7 @@ local Trash
 -- Helper to try to remove and clean up after disposed-of files
 local function TryToRemove (name, object, dir)
 	if _Exists_(name, dir) then
-		if object and object.parent then
+		if object and object.removeSelf ~= nil then -- object still valid?
 			return false
 		end
 

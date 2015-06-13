@@ -111,7 +111,7 @@ function M.DeferIf (func, object)
 	func = DeferFuncs[func] or func
 
 	return timer.performWithDelay(0, function(event)
-		if object.parent then
+		if object.removeSelf ~= nil then -- object still valid?
 			event.m_object = object
 
 			func(event)
