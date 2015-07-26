@@ -181,7 +181,7 @@ local Types = {}
 
 --- DOCME
 function M.DoIfVisible (object, other, func)
-	local object_valid, other_valid = object.removeSelf ~= nil, other.removeSelf ~= nil
+	local object_valid, other_valid = display.isValid(object), display.isValid(other)
 
 	if object_valid and other_valid and object ~= other and not (IsHidden[object] or IsHidden[other]) then
 		func(object, other, Types[other], true)
@@ -266,7 +266,7 @@ end
 
 --- DOCME
 function M.DoOrDefer (object, other, phase, func)
-	if object ~= other and object.removeSelf ~= nil and other.removeSelf ~= nil then -- object, other still valid?
+	if object ~= other and display.isValid(object) and display.isValid(other) then
 		-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
 		-- action; otherwise, perform it immediately.
 		if phase == "began" then
@@ -403,7 +403,7 @@ end
 --- DOCME
 function M.SetVisibility (object, show)
 	--
-	if object.removeSelf ~= nil then -- object still valid?
+	if display.isValid(object) then
 		local hide = not show
 
 		--
@@ -416,7 +416,7 @@ function M.SetVisibility (object, show)
 
 			for i = #(list1 or "") - 1, 1, -2 do
 				local other = list1[i]
-				local intact = other.removeSelf ~= nil
+				local intact = display.isValid(other)
 
 				if not (intact and IsHidden[other]) then
 					list1[ni], ni = i, ni - 1

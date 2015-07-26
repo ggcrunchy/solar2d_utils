@@ -39,6 +39,7 @@ local type = type
 local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
+local display = display
 local system = system
 local timer = timer
 
@@ -434,7 +435,7 @@ local Trash
 -- Helper to try to remove and clean up after disposed-of files
 local function TryToRemove (name, object, dir)
 	if _Exists_(name, dir) then
-		if object and object.removeSelf ~= nil then -- object still valid?
+		if display.isValid(object) then
 			return false
 		end
 
