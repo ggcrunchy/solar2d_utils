@@ -93,7 +93,7 @@ end
 -- This is intended for simulator-side tests. On a device, **system.ResourceDirectory** is
 -- always chosen.
 -- @string name File path.
--- @[opt=system.ResourceDirectory] pref_base Preferred directory base.
+-- @param[opt=system.ResourceDirectory] pref_base Preferred directory base.
 -- @treturn userdata If chosen, _pref\_base_; otherwise, **system.ResourceDirectory**.
 function M.ChooseBaseDirOfFile (name, pref_base)
 	if OnSimulator and pref_base and _Exists_(name, pref_base) then
@@ -106,7 +106,7 @@ end
 --- Variant of @{ChooseBaseDirOfFile} which, in the presence of both versions of a file, will
 -- prefer the directory base of the more recently modified file.
 -- @string name File path.
--- @[opt=system.ResourceDirectory] pref_base Preferred directory base.
+-- @param[opt=system.ResourceDirectory] pref_base Preferred directory base.
 -- @treturn userdata If chosen, _pref\_base_; otherwise, **system.ResourceDirectory**.
 function M.ChooseBaseDirOfFile_Newer (name, pref_base)
 	local base
