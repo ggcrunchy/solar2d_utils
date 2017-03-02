@@ -455,8 +455,10 @@ end
 
 -- Enter Level response
 local function EnterLevel ()
-	physics.start()
-	physics.setGravity(0, 0)
+	if not IsHidden then
+		physics.start()
+		physics.setGravity(0, 0)
+	end
 
 	IsHidden, Partners = {}, {}
 end
