@@ -66,6 +66,10 @@ local function IdentifyGamepad (device)
 		Gamepads[device] = "PS3"
 	elseif name:find(XInput) then
 		Gamepads[device] = "Xbox360"
+  elseif device.MFiProfile then
+    local mfip = device.MFiProfile
+
+    Gamepads[device] = "MFi" .. mfip:sub(1, 1):upper() .. mfip:sub(2)
 	else -- TODO: several others, also test different platforms
 		Gamepads[device] = "unknown"
 	end
