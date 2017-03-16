@@ -44,6 +44,7 @@ local _FilterBits_
 local _Implements_Pred_
 local _MakeSensor_
 local _SetType_
+local _SetVisibility_
 
 -- Exports --
 local M = {}
@@ -270,14 +271,18 @@ function M.DoOrDefer (object, other, phase, func)
 		-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
 		-- action; otherwise, perform it immediately.
 		if phase == "began" then
-			if IsHidden[object] or IsHidden[other] then
-				AddToList(object, other, func)
+			--
+			AddToList(object, other, func)
 
-				if not InList(other, object) then
-					AddToList(other, object, false)
-				end
-			else
-				func(object, other, Types[other], true)
+			if not InList(other, object) then
+				AddToList(other, object, false)
+			end
+
+			--
+			if not (IsHidden[object] or IsHidden[other]) then
+				IsHidden[object] = "immediate"
+
+				_SetVisibility_(object, true)
 			end
 
 		-- Phase "ended", objects intact: break pairings.
@@ -404,52 +409,45 @@ end
 function M.SetVisibility (object, show)
 	--
 	if display.isValid(object) then
-		local hide = not show
+		local hide, is_hidden = not show, IsHidden[object]
+
+		--
+		IsHidden[object] = hide
 
 		--
 		if hide then
 			Check(object)
 
 		--
-		elseif IsHidden[object] then
-			local list1, otype, ni = Partners[object], Types[object], -1
+		elseif is_hidden then
+			local list1, otype, ni, is_immediate = Partners[object], Types[object], -1, is_hidden == "immediate"
 
 			for i = #(list1 or "") - 1, 1, -2 do
 				local other = list1[i]
 				local intact = display.isValid(other)
 
 				if not (intact and IsHidden[other]) then
-					list1[ni], ni = i, ni - 1
-
 					if intact then
 						local func = list1[i + 1]
 
 						if func then
-							func(object, other, Types[other], false)
+							func(object, other, Types[other], is_immediate)
 						end
 
 						--
 						local list2, nj = Partners[other], -1
 
 						for j in ForEach(list2, object) do
-							list2[nj], nj = j, nj - 1
-
 							local func2 = list2[j + 1]
 
 							if func2 then
-								func2(other, object, otype, false)
+								func2(other, object, otype, is_immediate)
 							end
 						end
-
-						RemoveAll(list2)
 					end
 				end
 			end
-
-			RemoveAll(list1)
 		end
-
-		IsHidden[object] = hide
 	end
 end
 
@@ -509,6 +507,7 @@ _FilterBits_ = M.FilterBits
 _Implements_Pred_ = M.Implements_Pred
 _MakeSensor_ = M.MakeSensor
 _SetType_ = M.SetType
+_SetVisibility_ = M.SetVisibility
 
 -- Export the module.
 return M

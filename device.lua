@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local abs = math.abs
 local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
@@ -32,12 +33,76 @@ local tonumber = tonumber
 local strings = require("tektite_core.var.strings")
 
 -- Corona globals --
+local Runtime = Runtime
 local system = system
 
 -- Add persistence for configuring?
 
 -- Exports --
 local M = {}
+
+-- --
+local OUYA = "OUYA Game Controller"
+
+-- --
+local PS3 = "PLAYSTATION(R)3 Controller"
+
+-- --
+local XInput = "XInput Gamepad"
+
+-- --
+local Devices = {}
+
+-- --
+local Gamepads = {}
+
+--
+local function IdentifyGamepad (device)
+	local name = device.displayName
+
+	if name:sub(1, #OUYA) == OUYA then
+		Gamepads[device] = "OUYA"
+	elseif name == PS3 then
+		Gamepads[device] = "PS3"
+	elseif name:find(XInput) then
+		Gamepads[device] = "Xbox360"
+	else -- TODO: several others, also test different platforms
+		Gamepads[device] = "unknown"
+	end
+end
+
+--
+local function AddNewDevice (device)
+	Devices[#Devices + 1] = device
+
+	if device.type == "gamepad" then
+		IdentifyGamepad(device)
+	end
+end
+
+--
+for _, device in ipairs(system.getInputDevices()) do
+	AddNewDevice(device)
+end
+
+--
+Runtime:addEventListener("inputDeviceStatus", function(event)
+	local ed = event.device
+
+	for _, device in ipairs(Devices) do
+		if ed == device then
+			ed = nil
+			
+			break
+		end
+	end
+
+	if ed then
+		AddNewDevice(ed)
+	elseif event.connectionStateChanged then
+		-- ??? (also, reconfigured...)
+	end
+end)
 
 -- --
 local AxisMappings = {
@@ -74,12 +139,6 @@ local AddDevice = {}
 local Joysticks
 
 do
-	-- --
-	local OUYA = "OUYA Game Controller"
-
-	-- --
-	local PS3 = "PLAYSTATION(R)3 Controller"
-
 	--
 	function AddDevice:joystick (index)
 		local name, joy, mapping = self.displayName, { device = self }
@@ -254,10 +313,10 @@ This axis number can be used as an index with the array returned by its input de
 function M.Show ()
     local text = display.newText("WAITING", 0, 0, native.systemFontBold, 35)
 
-    local T = {}
+    local T = {}--[[
     local function print (a, b, c)
         T[#T+1]=tostring(a) .. "  " .. tostring(b or "") .. "  " .. tostring(c or "")
-    end
+    end]]
     
     local function PrintDevice (device, i)
         print( i, "canVibrate", device.canVibrate )
@@ -290,6 +349,118 @@ function M.Show ()
         text.x = display.contentCenterX
         text.y = display.contentHeight - 50
     end, 0)
+end
+
+-- Adapted from ponywolf's joykey:
+do
+	local deadZone = 0.333
+
+	-- Store previous events
+	local eventCache = {}
+
+	-- Store key mappings
+	local map = {}
+
+	-- Map the axis to arrow keys and wsad
+	map["axis1-"] = "left"
+	map["axis1+"] = "right"
+	map["axis2-"] = "up"
+	map["axis2+"] = "down"
+
+	map["axis3-"] = "a"
+	map["axis3+"] = "d"
+	map["axis4-"] = "w"
+	map["axis4+"] = "s"
+
+	-- Capture the axis event
+	local function AxisToKey (event)
+		local num = event.axis.number or 1
+		local name = "axis" .. num
+		local value = event.normalizedValue
+		local oppositeAxis = "none"
+
+		event.name = "key"  -- Overide event type
+
+		-- Set map axis to key
+		if value > 0 then
+			event.keyName = map[name .. "+"]
+			oppositeAxis = map[name .. "-"]
+		elseif value < 0 then
+			event.keyName = map[name .. "-"]
+			oppositeAxis = map[name .. "+"]
+		else
+			-- We had an exact 0 so throw both key up events for this axis
+			event.keyName = map[name .. "-"]
+			oppositeAxis = map[name .. "+"]
+		end
+
+		if abs(value) > deadZone then
+			-- Throw the opposite axis if it was last pressed
+			if eventCache[oppositeAxis] then
+				event.phase = "up"
+				eventCache[oppositeAxis] = false
+				event.keyName = oppositeAxis
+				Runtime:dispatchEvent( event )
+			end
+
+			-- Throw this axis if it wasn't last pressed
+			if not eventCache[event.keyName] then
+				event.phase = "down"
+				eventCache[event.keyName] = true
+				Runtime:dispatchEvent( event )
+			end
+		else
+			-- We're back toward center
+			if eventCache[event.keyName] then
+				event.phase = "up"
+				eventCache[event.keyName] = false
+				Runtime:dispatchEvent( event )
+			end
+
+			if eventCache[oppositeAxis] then
+				event.phase = "up"
+				eventCache[oppositeAxis] = false
+				event.keyName = oppositeAxis
+				Runtime:dispatchEvent( event )
+			end
+		end
+
+		return true
+	end
+
+	-- --
+	local IsMapped
+
+	--- DOCME
+	function M.MapAxesToKeyEvents (enable)
+		if not enable then
+			Runtime:removeEventListener("axis", AxisToKey)
+		elseif not IsMapped then
+			Runtime:addEventListener("axis", AxisToKey)
+		end
+
+		IsMapped = not not enable
+	end
+end
+
+-- --
+local Actions = {}
+
+--- DOCME
+function M.MapButtonsToAction (action, map)
+	for ctype, name in pairs(map) do
+		local cgroup = Actions[ctype] or {}
+
+		cgroup["button" .. name], Actions[ctype] = action, cgroup
+	end
+end
+
+--- DOCME
+function M.TranslateButton (event)
+	local ctype = Gamepads[event.device]
+	local cgroup = Actions[ctype]
+
+	return cgroup and cgroup[event.keyName]
 end
 
 -- Export the module.
