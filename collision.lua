@@ -39,11 +39,7 @@ local display = display
 local physics = require("physics")
 
 -- Cached module references --
-local _Border_
-local _FilterBits_
 local _Implements_Pred_
-local _MakeSensor_
-local _SetType_
 local _SetVisibility_
 
 -- Exports --
@@ -101,52 +97,6 @@ function M.AddInterfaces_Pred (type, ...)
 	end
 
 	InterfacePreds[type] = preds
-end
-
--- --
-local BorderBody
-
--- Helper to build up a border
-local function BorderRect (group, x, y, w, h)
-	BorderBody = BorderBody or { filter = { categoryBits = _FilterBits_("border"), maskBits = 0xFFFF } }
-
-	local rect = display.newRect(group, x, y, w, h)
-
-	rect:translate(w / 2, h / 2)
-
-	_MakeSensor_(rect, "static", BorderBody)
-	_SetType_(rect, "border")
-
-	rect.isVisible = false
-end
-
---- Builds some invisible rectangles around a rectangular interior region. This is convenient
--- e.g. for detecting objects leaving the level boundaries.
---
--- These rectangles will have static, sensor bodies, with collision type **"border"**.
--- @pgroup group Display group that will hold border rectangles.
--- @number x Interior region, upper-left x-coordinate.
--- @number y Interior region, upper-left y-coordinate.
--- @number w Interior region width.
--- @number h Interior region height.
--- @number rdim One of the dimensions of each border rectangle: for rectangles mostly
--- to the left or right of the interior region, this will be the width; for the rest mostly
--- above or below, the height. The other dimension may then be deduced via a heuristic.
--- @tparam number sep Minimum separation distance away from sides of the interior rectangle
--- that border rectangles must honor; if absent, 0.
--- @see GetType
-function M.Border (group, x, y, w, h, rdim, sep)
-	sep = sep or 0
-
-	local bdim = rdim + sep
-	local xl, xr = x - bdim, x + w + sep
-	local yt, yb = y - bdim, y + h + sep
-	local bw, bh = xr - xl + rdim, yb - yt + rdim
-
-	BorderRect(group, xl, yt, bw, rdim)
-	BorderRect(group, xl, y, rdim, bh)
-	BorderRect(group, xr, y, rdim, bh)
-	BorderRect(group, xl, yb, bw, rdim)
 end
 
 --
@@ -490,23 +440,13 @@ for k, v in pairs{
 	end,
 
 	-- Reset Level --
-	reset_level = EnterLevel,
-
-	-- Things Loaded --
-	things_loaded = function(level)
-		-- Add a "net" around the level to deal with things that fly away.
-		_Border_(level.things_layer, 0, 0, level.ncols * level.w, level.nrows * level.h, 500, 150)
-	end
+	reset_level = EnterLevel
 } do
 	Runtime:addEventListener(k, v)
 end
 
 -- Cache module members.
-_Border_ = M.Border
-_FilterBits_ = M.FilterBits
 _Implements_Pred_ = M.Implements_Pred
-_MakeSensor_ = M.MakeSensor
-_SetType_ = M.SetType
 _SetVisibility_ = M.SetVisibility
 
 -- Export the module.
