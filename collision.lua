@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local assert = assert
+local pairs = pairs
 
 -- Modules --
 local adaptive = require("tektite_core.table.adaptive")
@@ -99,31 +100,6 @@ function M.AddInterfaces_Pred (type, ...)
 	InterfacePreds[type] = preds
 end
 
---
-local function FindFrom (list, object, pos)
-	for i = pos, 1, -2 do
-		if list[i] == object then
-			return i
-		end
-	end
-end
-
---
-local function AuxForEach (list, index)
-	if index > 0 then
-		return FindFrom(list, list[index], index - 2)
-	elseif index < 0 then
-		return -index
-	end
-end
-
---
-local function ForEach (list, object)
-	local pos = FindFrom(list, object, #(list or "") - 1)
-
-	return AuxForEach, list, pos and -pos or 0
-end
-
 -- --
 local IsHidden, Partners
 
@@ -165,54 +141,23 @@ local function AddToList (object, other, func)
 
 	local list = Partners[object] or {}
 
-	list[#list + 1] = other
-	list[#list + 1] = func
-
-	Partners[object] = list
+	Partners[object], list[other] = list, func
 end
 
 --
 local function InList (object, other)
 	local list = Partners[object]
 
-	for i = 1, #(list or ""), 2 do
-		if list[i] == other then
-			return true
-		end
-	end
-end
-
---
-local function RemoveAll (list)
-	if list then
-		local index, n = -1, #list
-
-		while true do
-			local pos = list[index]
-
-			if pos then
-				--
-				list[pos], list[pos + 1] = list[n - 1], list[n]
-				n, list[n], list[n - 1] = n - 2
-
-				--
-				index, list[index] = index - 1
-			else
-				break
-			end
-		end
-	end
+	return list and list[other]
 end
 
 --
 local function RemoveFromList (object, other)
-	local list, index = Partners[object], -1
+	local list = Partners[object]
 
-	for pos in ForEach(list, other) do
-		list[index], index = pos, index - 1
+	if list then
+		list[other] = nil
 	end
-
-	RemoveAll(list)
 end
 
 --- DOCME
@@ -370,25 +315,23 @@ function M.SetVisibility (object, show)
 
 		--
 		elseif is_hidden then
-			local list1, otype, ni, is_immediate = Partners[object], Types[object], -1, is_hidden == "immediate"
+			local list1 = Partners[object]
 
-			for i = #(list1 or "") - 1, 1, -2 do
-				local other = list1[i]
-				local intact = display.isValid(other)
+			if list1 then
+				local otype, is_immediate = Types[object], is_hidden == "immediate"
 
-				if not (intact and IsHidden[other]) then
-					if intact then
-						local func = list1[i + 1]
+				for other, func in pairs(list1) do
+					local intact = display.isValid(other)
 
-						if func then
-							func(object, other, Types[other], is_immediate)
-						end
+					if not (intact and IsHidden[other]) then
+						if intact then
+							if func then
+								func(object, other, Types[other], is_immediate)
+							end
 
-						--
-						local list2, nj = Partners[other], -1
-
-						for j in ForEach(list2, object) do
-							local func2 = list2[j + 1]
+							--
+							local list2 = Partners[other]
+							local func2 = list2 and list2[object]
 
 							if func2 then
 								func2(other, object, otype, is_immediate)
