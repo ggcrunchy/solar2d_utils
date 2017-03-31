@@ -30,6 +30,7 @@ local pairs = pairs
 -- Modules --
 local adaptive = require("tektite_core.table.adaptive")
 local args = require("iterator_ops.args")
+local frames = require("corona_utils.frames")
 local powers_of_2 = require("bitwise_ops.powers_of_2")
 local timers = require("corona_utils.timers")
 
@@ -101,6 +102,22 @@ function M.AddInterfaces_Pred (type, ...)
 end
 
 -- --
+local Watching
+
+--- DOCME
+function M.Dirty (object)
+	if display.isValid(object) then
+		local watch = Watching[object] or {}
+
+		for other in pairs(watch) do
+			watch[other] = 0
+		end
+
+		Watching[object] = watch
+	end
+end
+
+-- --
 local IsHidden, Partners
 
 -- Types used to manage physics interactions --
@@ -123,7 +140,7 @@ local function WipeState (event)
 		IsHidden[object], Partners[object] = nil
 	end
 
-	Types[object] = nil
+	Types[object], Watching[object] = nil
 end
 
 --
@@ -351,24 +368,84 @@ local function EnterLevel ()
 		physics.setGravity(0, 0)
 	end
 
-	IsHidden, Partners = {}, {}
+	IsHidden, Partners, Watching = {}, {}, {}
+end
+
+--
+local function Watch (o1, o2, value)
+	local w1, w2 = Watching[o1], Watching[o2]
+
+	if w1 or w2 then
+		local v1, v2
+
+		if w1 then
+			w1[o2], v1 = value, w1[o2]
+		end
+
+		if w2 then
+			w2[o1], v2 = value, w2[o1]
+		end
+			
+		return v1 or v2
+	end
+end
+
+-- --
+local FrameID
+
+--
+local function AuxCollision (phase, o1, o2, contact)
+	local t1, t2 = Types[o1], Types[o2]
+	local h1, h2 = Handlers[t1], Handlers[t2]
+
+	if h1 then
+		h1(phase, o1, o2, t2, contact)
+	end
+
+	if h2 then
+		h2(phase, o2, o1, t1, contact)
+	end
 end
 
 -- Listen to events.
 for k, v in pairs{
 	-- Collision --
 	collision = function(event)
-		local o1, o2 = event.object1, event.object2
-		local t1, t2 = Types[o1], Types[o2]
-		local h1, h2 = Handlers[t1], Handlers[t2]
-		local phase, contact = event.phase, event.contact
+		local o1, o2, phase = event.object1, event.object2, event.phase
 
-		if h1 then
-			h1(phase, o1, o2, t2, contact)
+		if phase ~= "began" then
+			Watch(o1, o2, nil)
+		elseif Watch(o1, o2, FrameID) then
+			return
 		end
 
-		if h2 then
-			h2(phase, o2, o1, t1, contact)
+		AuxCollision(phase, o1, o2, event.contact)
+	end,
+
+	-- enterFrame --
+	enterFrame = function()
+		if Watching then
+			-- Check all (valid) pairs being watched. If an objects are still colliding
+			-- (since they collided again when a new body was added), keep the entries
+			-- around but ignore the objects again until one of them is dirtied. If the
+			-- entry has gone stale, break the connection.
+			for object, w1 in pairs(Watching) do
+				for other, frame in pairs(w1) do
+					if display.isValid(other) then
+						if frame == FrameID then
+							Watch(object, other, false)
+						elseif frame then
+							Watch(object, other, nil)
+							AuxCollision("ended", object, other, false)
+						end
+					else
+						w1[other] = nil
+					end
+				end
+			end
+
+			-- Now that all checks have been done against it, update the collision frame ID.
+			FrameID = frames.GetFrameID()
 		end
 	end,
 
@@ -379,7 +456,7 @@ for k, v in pairs{
 	leave_level = function()
 		physics.stop()
 
-		IsHidden, Partners = nil
+		IsHidden, Partners, Watching = nil
 	end,
 
 	-- Reset Level --
