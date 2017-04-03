@@ -140,7 +140,11 @@ local function WipeState (event)
 		IsHidden[object], Partners[object] = nil
 	end
 
-	Types[object], Watching[object] = nil
+	if Watching then
+		Watching[object] = nil
+	end
+
+	Types[object] = nil
 end
 
 --
