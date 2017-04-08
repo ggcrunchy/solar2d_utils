@@ -28,6 +28,7 @@ local assert = assert
 local ipairs = ipairs
 local pairs = pairs
 local random = math.random
+local rawequal = rawequal
 local tonumber = tonumber
 local type = type
 
@@ -123,11 +124,16 @@ local function AuxPlay (group, handles, name)
 	end
 end
 
+-- --
+local None = {}
+
 -- Plays a bit of audio (unless it has already played too recently)
 local function Play (group, handles, name, delay)
 	local play_timer
 
-	if delay then
+	if rawequal(handles, None) then
+		return nil
+	elseif delay then
 		play_timer = timer.performWithDelay(delay, function()
 			AuxPlay(group, handles, name)
 		end)
@@ -140,10 +146,8 @@ end
 
 --
 local function ClearHandles (handles)
-	if handles then
-		for _, v in pairs(handles) do
-			audio.dispose(v)
-		end
+	for _, v in pairs(handles) do
+		audio.dispose(v)
 	end
 end
 
@@ -153,7 +157,7 @@ local Groups = {}
 -- Common logic for making a sound group
 local function AuxNewSoundGroup (info)
 	-- Streamline the sounds list into a group.
-	local SoundGroup = { m_channels = {}, m_info = info }
+	local SoundGroup = { m_channels = {}, m_handles = None, m_info = info }
 
 	--- DOCME
 	function SoundGroup:IsActive ()
@@ -182,7 +186,7 @@ local function AuxNewSoundGroup (info)
 	--
 	-- After loading, this will be a no-op until the level is unloaded.
 	function SoundGroup:Load ()
-		if not self.m_handles then
+		if rawequal(self.m_handles, None) then
 			local handles = {}
 
 			for k, sinfo in pairs(self.m_info) do
@@ -391,7 +395,7 @@ local function LeaveLevel ()
 
 		ClearHandles(group.m_handles)
 
-		group.m_handles = nil
+		group.m_handles = None
 	end
 end
 
