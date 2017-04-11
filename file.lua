@@ -180,7 +180,7 @@ function EnumFiles.table (enumerate, into, path, exts)
 end
 
 -- Is this running on an Android device? --
-local OnAndroid = system.getInfo("platformName") == "Android"
+local OnAndroid = system.getInfo("platform") == "android"
 
 -- Helper to resolve a directory-associated database's path
 local function DatabasePath (path)
