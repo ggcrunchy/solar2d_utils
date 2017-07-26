@@ -309,6 +309,13 @@ function M.MakeSensor (object, body_type, props)
 	object.isSensor = true
 end
 
+--- Attempts to remove an object's body.
+-- @param object Object with body to remove.
+-- @treturn boolean Was a body removed?
+function M.RemoveBody (object)
+	return Types[object] ~= nil and physics.removeBody(object)
+end
+
 --- Associates a collision type with _object_. This is used to choose _object_'s handler in
 -- the event of a collision, and will also be provided (as a convenience) to the other
 -- object's handler.
@@ -429,7 +436,7 @@ for k, v in pairs{
 	-- enterFrame --
 	enterFrame = function()
 		if Watching then
-			-- Check all (valid) pairs being watched. If an objects are still colliding
+			-- Check all (valid) pairs being watched. If any objects are still colliding
 			-- (since they collided again when a new body was added), keep the entries
 			-- around but ignore the objects again until one of them is dirtied. If the
 			-- entry has gone stale, break the connection.

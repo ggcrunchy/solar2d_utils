@@ -35,6 +35,7 @@ local yield = coroutine.yield
 local errors = require("tektite_core.errors")
 
 -- Corona globals --
+local display = display
 local system = system
 local timer = timer
 
