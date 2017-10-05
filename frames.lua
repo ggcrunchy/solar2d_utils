@@ -27,10 +27,12 @@
 local abs = math.abs
 
 -- Corona globals --
---local system = system
+local Runtime = Runtime
+local system = system
 
 -- Cached module references --
 local _GetFrameID_
+local _InvalidateID_
 
 -- Exports --
 local M = {}
@@ -63,6 +65,58 @@ function M.GetFrameTime ()
 	return Last
 end
 
+-- Dispatcher used to drive "enterFrame" listeners once interception is up and running --
+local Events
+
+--- Any future **"enterFrame"** listeners are added to / removed from an internal dispatcher.
+-- Each frame the runtime's own event is propagated through this dispatcher, followed by
+-- an @{InvalidateID}. (The purpose of intercepting events is to ensure this invalidation.)
+--
+-- Note that this modifies the **Runtime:addEventListener()** and **Runtime:removeEventListener()**
+-- methods in order to reroute **"enterFrame"** messages. If the raw versions are needed, they
+-- must be cached beforehand. Typically, this should be called before adding listeners to
+-- avoid this need.
+--
+-- Subsequent calls are no-ops.
+function M.InterceptEnterFrameEvents ()
+	if not Events then
+		-- Add one final "enterFrame" listener to process subsequently added events.
+		Events = system.newEventDispatcher()
+
+		Runtime:addEventListener("enterFrame", function(event)
+			-- Run "enterFrame" events.
+			Events:dispatchEvent(event)
+
+			-- Do post-enterFrame logic.
+			_InvalidateID_()
+		end)
+
+		--
+		local AddEventListener, RemoveEventListener = Runtime.addEventListener, Runtime.removeEventListener
+
+		function Runtime:addEventListener (what, listener)
+			if what == "enterFrame" then
+				Events:addEventListener(what, listener)
+			else
+				AddEventListener(self, what, listener)
+			end
+		end
+
+		function Runtime:removeEventListener (what, listener)
+			if what == "enterFrame" then
+				Events:removeEventListener(what, listener)
+			else
+				RemoveEventListener(self, what, listener)
+			end
+		end
+	end
+end
+
+--- Invalidate any ID from last frame.
+function M.InvalidateID ()
+	FrameID = -abs(FrameID)
+end
+
 --- Enforces that a function is only called once per frame, e.g. for lazy updates.
 -- @callable func One-argument function to be called.
 -- @treturn function Wrapper. On the first call in a frame, _func_ is called with the
@@ -91,9 +145,6 @@ Runtime:addEventListener("enterFrame", function(event)
 
 	-- Update the time difference.
 	Diff, Last = Last and (now - Last) / 1000 or 0, now
-
-	-- Invalidate any ID from last frame.
-	FrameID = -abs(FrameID)
 end)
 
 -- "system" listener --
@@ -107,6 +158,7 @@ end)
 
 -- Cache module members.
 _GetFrameID_ = M.GetFrameID
+_InvalidateID_ = M.InvalidateID
 
 -- Export the module.
 return M
