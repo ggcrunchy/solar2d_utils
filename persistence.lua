@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local assert = assert
+local char = string.char
 local ipairs = ipairs
 local pairs = pairs
 local tostring = tostring
@@ -143,6 +144,21 @@ local Indent
 -- JSON replacement pattern --
 local PatternJSON = "[,:~%[%]{}]?"
 
+-- Guard against replacements inside strings.
+local CharsPatt, RestorePatt, ToGuard, ToRestore = "[,:~%[%]{}]", "[", {}, {} 
+
+for i, name in ipairs{ ",", ":", "~", "[", "]", "{", "}" } do
+	local encoded = char(i)
+
+	RestorePatt, ToGuard[name], ToRestore[encoded] = RestorePatt .. encoded, encoded, name
+end
+
+RestorePatt = RestorePatt .. "]"
+
+local function Guard (str)
+	return str:gsub(CharsPatt, ToGuard)
+end
+
 -- Formats a level's JSON representation into something fairly readable
 -- CONSIDER: Some of this could be unnecessary with dkjson... haven't bothered
 local function FormatJSON (substr)
@@ -187,11 +203,15 @@ function M.Encode (t, build)
 
 	Runtime:dispatchEvent{ name = "preprocess_level_string", string = str, ppinfo = pp }
 
+	str = str:gsub([[%b""]], Guard)
+
 	for _, op in ipairs(pp) do
 		str = str:gsub(op[1], op[2])
 	end
 
-	return str:gsub(PatternJSON, FormatJSON)
+	str = str:gsub(PatternJSON, FormatJSON)
+
+	return str:gsub(RestorePatt, ToRestore)
 end
 
 --- Getter.
