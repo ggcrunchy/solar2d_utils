@@ -97,6 +97,11 @@ function M.AddCalls (n)
 	Count = count
 end
 
+--- DOCME
+function M.AtLimit ()
+	return Count == Limit
+end
+
 -- --
 local Tally, LastReported, OnTooManyEvent = 0, 0
 
