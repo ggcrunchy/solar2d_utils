@@ -27,7 +27,6 @@
 local assert = assert
 local find = string.find
 local format = string.format
-local next = next
 local pairs = pairs
 local rawequal = rawequal
 local rawget = rawget
@@ -355,14 +354,6 @@ local function TryInInstances (elem, other, esub, osub, itls, instance_ids)
 
 			elem[ii_key] = list
 
-			-- Cull the labels. In most circumstances IDs could be bound directly into the table,
-			-- but this accounts for the case of labels also being instance names.
-			instance_to_label[esub] = nil
-
-			if next(instance_to_label, nil) == nil then
-				elem[itl_key] = nil
-			end
-
 			return true
 		end
 	end
@@ -441,10 +432,9 @@ end
 -- When found among _actions_ or _out\_props_, _esub_ is added to an adaptive set: `elem[akey]`
 -- or `elem[pkey]`, respectively, cf. @{tektite_core.table.adaptive.AddToSet_Member}.
 --
--- Should the key be found in `elem[itl_key]`, i.e. a particular instances-to-labels map, it
--- is extracted along with the corresponding label, the map itself being removed if this
--- leaves it empty. The target is then registered much like _events_ or _in\_props_:
--- `AddId(elem[ii_key], label, other.uid, osub)` (if absent, `elem[ii_key]` is created).
+-- Should the key be found in `elem[itl_key]`, i.e. a particular instances-to-labels map, the
+-- target is registered much like _events_ or _in\_props_: `AddId(elem[ii_key], label, other.uid, osub)`,
+-- creating a table under _ii\_key_ if necessary.
 function M.PrepLink (elem, other, esub, osub)
 	local helper, events, actions, akey, iprops, oprops, pkey, itls, instance_ids
 
