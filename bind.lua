@@ -40,7 +40,7 @@ local type = type
 local adaptive = require("tektite_core.table.adaptive")
 local frames = require("corona_utils.frames")
 local lazy = require("tektite_core.table.lazy")
-local table_funcs = require("tektite_core.table.funcs")
+local meta = require("tektite_core.table.meta")
 
 -- Corona globals --
 local Runtime = Runtime
@@ -183,7 +183,7 @@ end
 -- _object_ passed alongside it as _arg_.
 -- @treturn table Weak table associating objects to broadcasters.
 function M.BroadcastBuilder ()
-	local object_to_broadcaster, list = table_funcs.Weak("k")
+	local object_to_broadcaster, list = meta.Weak("k")
 
 	return function(func, object)
 		-- If events already exist, add this event to the list. If this
@@ -288,7 +288,7 @@ local function AuxEvent (event, index)
 end
 
 -- --
-local Commands = table_funcs.Weak("k")
+local Commands = meta.Weak("k")
 
 --- DOCME
 function M.GetActionCommands (action)
