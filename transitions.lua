@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local assert = assert
 local pairs = pairs
 local rawequal = rawequal
 local remove = table.remove
@@ -32,16 +33,27 @@ local yield = coroutine.yield
 
 -- Modules --
 local flow = require("coroutine_ops.flow")
+local meta = require("tektite_core.table.meta")
 
 -- Corona globals --
 local transition = transition
 
+-- Cached module references --
+local _GetState_
+
 -- Exports --
 local M = {}
 
+--
+--
+--
+
+-- Current state of transition handle, if any --
+local HandleState = meta.Weak("k")
+
 -- Helper to report to flow operation when a transition has completed
 local function DoingTransition (handle)
-	return not handle.m_done
+	return HandleState[handle] == "doing"
 end
 
 -- Cache of cancel / complete events --
@@ -49,19 +61,87 @@ local EventCache = {}
 
 -- Builds a resettable event to detect cancelled / completed transitions
 local function OnEvent ()
-	local func, handle
+	local func, handle, how
 
-	return function(target, arg1, arg2)
+	return function(target, arg1, arg2, arg3)
 		if rawequal(target, EventCache) then
-			func, handle = arg1, arg2
+			func, handle, how = arg1, arg2, arg3
 		else
-			handle.m_done = true
+			HandleState[handle] = how
 
 			if func then
 				func(target)
 			end
 		end
 	end
+end
+
+--
+local function AuxDoAndWait (target, params)
+	local event1, func1 = remove(EventCache) or OnEvent(), params.onCancel
+	local event2, func2 = remove(EventCache) or OnEvent(), params.onComplete
+
+	-- Install transition-aware handlers into the parameters and launch the transition.
+	params.onCancel, params.onComplete = event1, event2
+
+	local handle = transition.to(target, params)
+
+	HandleState[handle] = "doing"
+
+	-- The previous steps may have evicted the user-provided handlers; if so, references to said
+	-- handlers are passed along to the overrides, to be called after doing their own work. The
+	-- transition handle is also sent, so that it can be flagged once the transition is ended.
+	event1(EventCache, func1, handle, "cancelled")
+	event2(EventCache, func2, handle, "completed")
+
+	-- Restore the user-provided handlers.
+	params.onCancel, params.onComplete = func1, func2
+
+	return handle, event1, event2
+end
+
+local function Cleanup (event1, event2)
+	-- Remove all transition state and put the events into the cache.
+	event1(EventCache, nil)
+	event2(EventCache, nil)
+
+	EventCache[#EventCache + 1] = event1
+	EventCache[#EventCache + 1] = event2
+end
+
+-- --
+local Pollers = {}
+
+--- DOCME
+function M.DoAndPoll (target, params)
+	local first, handle, event1, event2
+	local poll = remove(Pollers) or function(arg1, arg2, arg3)
+		if rawequal(arg1, Pollers) then
+			first, handle, event1, event2 = true, AuxDoAndWait(arg2, arg3)
+		else
+			assert(handle, "Already done polling")
+
+			local state = _GetState_(handle)
+
+			if state == "cancelled" or state == "completed" then
+				Cleanup(event1, event2)
+
+				handle, event1, event2 = nil
+
+				return false
+			elseif first then
+				first = nil
+			else
+				yield()
+			end
+
+			return true
+		end
+	end
+
+	poll(Pollers, target, params)
+
+	return poll, handle
 end
 
 --- Kicks off a transition and waits until it has finished.
@@ -74,22 +154,7 @@ end
 --
 -- If the wait is aborted during the update, the transition is cancelled.
 function M.DoAndWait (target, params, update)
-	local event1, func1 = remove(EventCache) or OnEvent(), params.onCancel
-	local event2, func2 = remove(EventCache) or OnEvent(), params.onComplete
-
-	-- Install transition-aware handlers into the parameters and launch the transition.
-	params.onCancel, params.onComplete = event1, event2
-
-	local handle = transition.to(target, params)
-
-	-- The previous steps may have evicted the user-provided handlers; if so, references to said
-	-- handlers are passed along to the overrides, to be called after doing their own work. The
-	-- transition handle is also sent, so that it can be flagged once the transition is ended.
-	event1(EventCache, func1, handle)
-	event2(EventCache, func2, handle)
-
-	-- Restore the user-provided handlers.
-	params.onCancel, params.onComplete = func1, func2
+	local handle, event1, event2 = AuxDoAndWait(target, params)
 
 	-- Wait for the transition to finish, performing any user-provided update.
 	if not flow.WaitWhile(DoingTransition, update, handle) then
@@ -99,12 +164,14 @@ function M.DoAndWait (target, params, update)
 		yield()
 	end
 
-	-- Remove all transition state and put the events into the cache.
-	event1(EventCache, nil)
-	event2(EventCache, nil)
+	Cleanup(event1, event2)
 
-	EventCache[#EventCache + 1] = event1
-	EventCache[#EventCache + 1] = event2
+	return HandleState[handle]
+end
+
+--- DOCME
+function M.GetState (handle)
+	return HandleState[handle] or "none"
 end
 
 do
@@ -179,6 +246,9 @@ do
 		return AuxProxy(func, options, arg, on_done)
 	end
 end
+
+-- Cache module members.
+_GetState_ = M.GetState
 
 -- Export the module.
 return M
