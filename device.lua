@@ -76,11 +76,20 @@ local function IdentifyGamepad (device)
 end
 
 --
+local OnAndroid = system.getInfo("platform") == "android" and system.getInfo("environment") == "device"
+
+--
 local function AddNewDevice (device)
 	Devices[#Devices + 1] = device
 
 	if device.type == "gamepad" then
 		IdentifyGamepad(device)
+	elseif OnAndroid and device.type == "joystick" then
+		if device.displayName == "Microsoft X-Box 360 pad" then -- observed, but this concurs:
+		-- https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Microsoft_XBOX_360_Controller_USB.cfg
+			Gamepads[device] = "Xbox360"
+		end
+		-- TODO: need more controllers to see how this all generalizes
 	end
 end
 
@@ -276,49 +285,54 @@ do
 		local value = event.normalizedValue
 		local oppositeAxis = "none"
 
-		event.name = "key"  -- Overide event type
+		--
+		local dtype, plus, minus = event.device.type, map[name .. "+"], map[name .. "-"]
 
-		-- Set map axis to key
-		if value > 0 then
-			event.keyName = map[name .. "+"]
-			oppositeAxis = map[name .. "-"]
-		elseif value < 0 then
-			event.keyName = map[name .. "-"]
-			oppositeAxis = map[name .. "+"]
-		else
-			-- We had an exact 0 so throw both key up events for this axis
-			event.keyName = map[name .. "-"]
-			oppositeAxis = map[name .. "+"]
-		end
-
-		if abs(value) > deadZone then
-			-- Throw the opposite axis if it was last pressed
-			if eventCache[oppositeAxis] then
-				event.phase = "up"
-				eventCache[oppositeAxis] = false
-				event.keyName = oppositeAxis
-				Runtime:dispatchEvent( event )
+		if plus and (dtype == "gamepad" or dtype == "joystick") then
+			event.name = "key"  -- Overide event type
+		
+			-- Set map axis to key
+			if value > 0 then
+				event.keyName = plus
+				oppositeAxis = minus
+			elseif value < 0 then
+				event.keyName = minus
+				oppositeAxis = plus
+			else
+				-- We had an exact 0 so throw both key up events for this axis
+				event.keyName = minus
+				oppositeAxis = plus
 			end
 
-			-- Throw this axis if it wasn't last pressed
-			if not eventCache[event.keyName] then
-				event.phase = "down"
-				eventCache[event.keyName] = true
-				Runtime:dispatchEvent( event )
-			end
-		else
-			-- We're back toward center
-			if eventCache[event.keyName] then
-				event.phase = "up"
-				eventCache[event.keyName] = false
-				Runtime:dispatchEvent( event )
-			end
+			if abs(value) > deadZone then
+				-- Throw the opposite axis if it was last pressed
+				if eventCache[oppositeAxis] then
+					event.phase = "up"
+					eventCache[oppositeAxis] = false
+					event.keyName = oppositeAxis
+					Runtime:dispatchEvent( event )
+				end
 
-			if eventCache[oppositeAxis] then
-				event.phase = "up"
-				eventCache[oppositeAxis] = false
-				event.keyName = oppositeAxis
-				Runtime:dispatchEvent( event )
+				-- Throw this axis if it wasn't last pressed
+				if not eventCache[event.keyName] then
+					event.phase = "down"
+					eventCache[event.keyName] = true
+					Runtime:dispatchEvent( event )
+				end
+			else
+				-- We're back toward center
+				if eventCache[event.keyName] then
+					event.phase = "up"
+					eventCache[event.keyName] = false
+					Runtime:dispatchEvent( event )
+				end
+
+				if eventCache[oppositeAxis] then
+					event.phase = "up"
+					eventCache[oppositeAxis] = false
+					event.keyName = oppositeAxis
+					Runtime:dispatchEvent( event )
+				end
 			end
 		end
 

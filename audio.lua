@@ -29,6 +29,7 @@ local ipairs = ipairs
 local pairs = pairs
 local random = math.random
 local rawequal = rawequal
+local running = coroutine.running
 local tonumber = tonumber
 local type = type
 
@@ -70,6 +71,17 @@ end
 -- --
 local Opts = {}
 
+-- --
+local DeferredPlay
+
+--
+local function Backfill (i, n)
+	DeferredPlay[i], DeferredPlay[i + 1], DeferredPlay[i + 2] = DeferredPlay[n - 2], DeferredPlay[n - 1], DeferredPlay[n]
+	DeferredPlay[n - 2], DeferredPlay[n - 1], DeferredPlay[n] = nil
+
+	return n - 3
+end
+
 -- Common play logic
 local function AuxPlay (group, handles, name)
 	local channels = group.m_channels
@@ -80,7 +92,41 @@ local function AuxPlay (group, handles, name)
 	--
 	local handle = handles[name]
 
-	if handle then
+	if handle == "loading" or running() then
+		if not DeferredPlay then
+			DeferredPlay = {}
+
+			DeferredPlay.timer = timer.performWithDelay(5, function(event)
+				local n = #DeferredPlay
+
+				for i = n - 2, 1, -3 do
+					local dgroup, dhandles, dname = DeferredPlay[i], DeferredPlay[i + 1], DeferredPlay[i + 2]
+					local handle = dhandles[dname]
+
+					if handle ~= "loading" then
+						if handle ~= "removed" then
+							AuxPlay(dgroup, dhandles, dname)
+						end
+
+						n = Backfill(i, n)
+					end
+				end
+
+				DeferredPlay.nframes = DeferredPlay.nframes - 1
+
+				if DeferredPlay.nframes == 0 then
+					timer.cancel(event.source)
+
+					DeferredPlay = nil
+				end
+			end, 0)
+		end
+
+		DeferredPlay.nframes = (DeferredPlay.nframes or 0) + 10
+		DeferredPlay[#DeferredPlay + 1] = group
+		DeferredPlay[#DeferredPlay + 1] = handles
+		DeferredPlay[#DeferredPlay + 1] = name
+	elseif handle and handle ~= "removed" then
 		local info = group.m_info[name]
 
 		--
@@ -146,8 +192,23 @@ end
 
 --
 local function ClearHandles (handles)
-	for _, v in pairs(handles) do
-		audio.dispose(v)
+	for k, v in pairs(handles) do
+		if type(v) ~= "string" then
+			audio.dispose(v)
+		end
+
+		handles[k] = "removed"
+	end
+end
+
+-- --
+local DeferredLoad
+
+local function LoadInfo (handles, info)
+	for k, sinfo in pairs(info) do
+		local func = sinfo.m_is_streaming and "loadStream" or "loadSound"
+
+		handles[k] = audio[func](sinfo.m_file, sinfo.m_base)
 	end
 end
 
@@ -189,10 +250,36 @@ local function AuxNewSoundGroup (info)
 		if rawequal(self.m_handles, None) then
 			local handles = {}
 
-			for k, sinfo in pairs(self.m_info) do
-				local func = sinfo.m_is_streaming and "loadStream" or "loadSound"
+			if running() then
+				if not DeferredLoad then
+					DeferredLoad = {}
 
-				handles[k] = audio[func](sinfo.m_file, sinfo.m_base)
+					DeferredLoad.timer = timer.performWithDelay(5, function(event)
+						for i = #DeferredLoad - 1, 1, -2 do
+							LoadInfo(DeferredLoad[i], DeferredLoad[i + 1])
+
+							DeferredLoad[i], DeferredLoad[i + 1] = nil
+						end
+
+						DeferredLoad.nframes = DeferredLoad.nframes - 1
+
+						if DeferredLoad.nframes == 0 then
+							timer.cancel(event.source)
+
+							DeferredLoad = nil
+						end
+					end, 0)
+				end
+
+				for k in pairs(self.m_info) do
+					handles[k] = "loading"
+				end
+
+				DeferredLoad.nframes = (DeferredLoad.nframes or 0) + 10
+				DeferredLoad[#DeferredLoad + 1] = handles
+				DeferredLoad[#DeferredLoad + 1] = self.m_info
+			else
+				LoadInfo(handles, self.m_info)
 			end
 
 			self.m_handles = handles
@@ -388,6 +475,18 @@ end
 
 -- TODO: Menu audio
 
+local function ClearDeferredItems ()
+	if DeferredLoad then
+		timer.cancel(DeferredLoad.timer)
+	end
+
+	if DeferredPlay then
+		timer.cancel(DeferredPlay.timer)
+	end
+
+	DeferredPlay, DeferredLoad = nil
+end
+
 -- Leave Level response
 local function LeaveLevel ()
 	for _, group in ipairs(Groups) do
@@ -397,6 +496,8 @@ local function LeaveLevel ()
 
 		group.m_handles = None
 	end
+
+	ClearDeferredItems()
 end
 
 -- Listen to events.
@@ -416,6 +517,8 @@ for k, v in pairs{
 				sinfo.time = nil
 			end
 		end
+
+		ClearDeferredItems()
 	end
 } do
 	Runtime:addEventListener(k, v)
