@@ -424,9 +424,108 @@ function M.NewNub (params)
 	end
 end
 
+local QuadArcMap, QuadArcParams = {}, {}
+local CornerU, CornerV
+
+local function CornerSegmentPair (index, ncurve, uvs, verts, index_map, dir, params)
+	Index, RI, VI = index, 1, 2 * (index - 1)
+	ncurve, params.nradius = ncurve / 2, params.nradius - 1
+
+	local dx1, dy1, du1, dv1 = (Qx - Ox) / ncurve, (Qy - Oy) / ncurve, (CornerU - UA) / ncurve, (CornerV - V1) / ncurve
+
+	if CheckIndex(index_map, dir) then
+		Add(uvs, verts, UA, V1, Px, Py)
+	end
+
+	local x, y, u, v = Px, Py, UA, V1
+
+	for _ = 1, ncurve do
+		x, y, u, v = x + dx1, y + dy1, u + du1, v + dv1
+
+		if CheckIndex(index_map, dir) then
+			Add(uvs, verts, u, v, x, y)
+			-- TODO: displacement
+		end
+	end
+
+	local dx2, dy2, du2, dv2 = (Ox - Px) / ncurve, (Oy - Py) / ncurve, (UB - CornerU) / ncurve, (V2 - CornerV) / ncurve
+
+	for _ = 1, ncurve - 1 do
+		x, y, u, v = x + dx2, y + dy2, u + du2, v + dv2
+
+		if CheckIndex(index_map, dir) then
+			Add(uvs, verts, u, v, x, y)
+			-- TODO: displacement
+		end
+	end
+
+	if CheckIndex(index_map, dir) then
+		Add(uvs, verts, UB, V2, Qx, Qy)
+		-- TODO: displacement
+	end
+end
+
 --- DOCME
 function M.NewQuadrantArc (params)
-	-- TODO!
+	ScrubAndCopy(QuadArcMap, params.index_map or QuadArcMap) -- if absent, "copy" from self once scrubbed
+	ScrubAndCopy(QuadArcParams, params)
+
+	QuadArcParams.before = CornerSegmentPair
+	QuadArcParams.index_map = QuadArcMap
+
+	local ncurve, nradius = params.ncurve, params.nradius
+
+	assert(ncurve > 0 and ncurve % 2 == 0, "Curve quantization must be even integer")
+	assert(nradius >= 1, "Radial quantization must be non-negative integer")
+
+	local kind, w, h = params.kind, params.width, params.height
+	local xr, yr = params.x_radius or params.radius, params.y_radius or params.radius
+
+	assert(w > xr, "Width must exceed radius")
+	assert(h > yr, "Height must exceed radius")
+
+	QuadArcParams.inner_x_radius, QuadArcParams.outer_x_radius = xr, w
+	QuadArcParams.inner_y_radius, QuadArcParams.outer_y_radius = yr, h
+
+	-- TODO: we could allow configuring the u- and v-extents themselves... maybe if a use case comes up
+
+	local x, y, v = params.x or 0, params.y or 0
+
+	QuadArcParams.u1a, QuadArcParams.u2a = params.u1 or 1, 0
+	QuadArcParams.u1b, QuadArcParams.u2b = params.u2 or 0, 1
+
+	if kind == "upper_left" or kind == "upper_right" then
+		QuadArcParams.y, v = y - h, params.v or 0
+		QuadArcParams.v1b, QuadArcParams.v2b = 1, 1
+
+		if kind == "upper_left" then
+			QuadArcParams.x, QuadArcParams.kind = x - w, "lower_right"
+			QuadArcParams.v1a, QuadArcParams.v2a = 1, v
+		else
+			QuadArcParams.x, QuadArcParams.kind = x + w, "lower_left"
+			QuadArcParams.v1a, QuadArcParams.v2a = v, 1
+		end
+	else
+		QuadArcParams.y, v = y + h, params.v or 1
+		QuadArcParams.v1b, QuadArcParams.v2b = 0, 0
+
+		if kind == "lower_right" then
+			QuadArcParams.x, QuadArcParams.kind = x + w, "upper_left"
+			QuadArcParams.v1a, QuadArcParams.v2a = 0, v
+		else
+			QuadArcParams.x, QuadArcParams.kind = x - w, "upper_right"
+			QuadArcParams.v1a, QuadArcParams.v2a = v, 0
+		end
+	end
+
+	CornerU, CornerV = params.u_corner or .5, params.v_corner or v
+
+	return _NewQuadrantRing_(QuadArcParams)
+
+	-- two-segments could be essentially in one go
+		-- would then just do quads as with any curve
+		-- in fact could always do quad for each quadrant arc, since we only ignore the two-segments
+	-- stitching entails using reverse direction or at least mapping the final column
 end
 
 local function GetRingParams (params)
@@ -456,11 +555,22 @@ local function GetRingParams (params)
 	return afunc, xinner, xouter, yinner, youter
 end
 
+local function AdvanceArc (dpx, dpy, dqx, dqy, dua, dub, dv1, dv2)
+	Px, Py, Qx, Qy, PrevRow, CurRow = Px + dpx, Py + dpy, Qx + dqx, Qy + dqy, CurRow, PrevRow
+	UA, UB, V1, V2 = UA + dua, UB + dub, V1 + dv1, V2 + dv2
+end
+
 local function GetUDomain (params)
 	local u1a, u2a = params.u1a or params.u1 or 0, params.u2a or params.u2 or 1 -- n.b. assumed to be symmetric at edges
 	local u1b, u2b = params.u1b or params.u1 or 0, params.u2b or params.u2 or 1
 
 	return u1a, u2a, u1b, u2b
+end
+
+local function JoinRows (indices, ncurve)
+	for i = 1, ncurve do
+		_AddQuadIndices_(indices, PrevRow[i], PrevRow[i + 1], CurRow[i], CurRow[i + 1])
+	end
 end
 
 --- DOCME
@@ -499,22 +609,32 @@ function M.NewQuadrantRing (params)
 	end
 
 	local index, dir, stride = params.index or 1, params.dir or 1, params.stride or ncurve + 1
-	local index_map, indices, uvs, verts = GetMeshStructure(params)
-
-	afunc(index, ncurve, uvs, verts, index_map, dir)
-
+	local before, index_map, indices, uvs, verts = params.before, GetMeshStructure(params)
 	local dua, dub = (u2a - u1a) / nradius, (u2b - u1b) / nradius -- ignored if nradius = 0
 	local dv1, dv2 = v1b and (v1b - V1) / nradius or 0, v2b and (v2b - V2) / nradius or 0 -- ditto
 
-	for _ = 1, nradius do
-		Px, Py, Qx, Qy, PrevRow, CurRow, index = Px + dpx, Py + dpy, Qx + dqx, Qy + dqy, CurRow, PrevRow, index + stride
-		UA, UB, V1, V2 = UA + dua, UB + dub, V1 + dv1, V2 + dv2
+	if before then
+		before(index, ncurve, uvs, verts, index_map, dir, params)
+
+		AdvanceArc(dpx, dpy, dqx, dqy, dua, dub, dv1, dv2)
+
+		index = index + stride
+	end
+
+	afunc(index, ncurve, uvs, verts, index_map, dir)
+
+	if before then
+		JoinRows(indices, ncurve)
+	end
+
+	for _ = 1, params.nradius do -- if before() was called, this might now be different
+		AdvanceArc(dpx, dpy, dqx, dqy, dua, dub, dv1, dv2)
+
+		index = index + stride
 
 		afunc(index, ncurve, uvs, verts, index_map, dir)
 
-		for i = 1, ncurve do
-			_AddQuadIndices_(indices, PrevRow[i], PrevRow[i + 1], CurRow[i], CurRow[i + 1])
-		end
+		JoinRows(indices, ncurve)
 	end
 
 	return uvs, verts, indices

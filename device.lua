@@ -29,9 +29,6 @@ local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
 
--- Modules --
-local strings = require("tektite_core.var.strings")
-
 -- Corona globals --
 local Runtime = Runtime
 local system = system
@@ -278,6 +275,18 @@ do
 	map["axis4-"] = "w"
 	map["axis4+"] = "s"
 
+	local KeyEvent = { name = "key" }
+
+	local function SendKeyEvent (phase, key_name)
+		if key_name then
+			KeyEvent.keyName = key_name
+		end
+	
+		KeyEvent.phase = phase
+	
+		Runtime:dispatchEvent(KeyEvent)
+	end
+
 	-- Capture the axis event
 	local function AxisToKey (event)
 		local num = event.axis.number or 1
@@ -289,49 +298,53 @@ do
 		local dtype, plus, minus = event.device.type, map[name .. "+"], map[name .. "-"]
 
 		if plus and (dtype == "gamepad" or dtype == "joystick") then
-			event.name = "key"  -- Overide event type
+		--	event.name = "key"  -- Overide event type
 		
 			-- Set map axis to key
 			if value > 0 then
-				event.keyName = plus
+				KeyEvent.keyName = plus
 				oppositeAxis = minus
 			elseif value < 0 then
-				event.keyName = minus
+				KeyEvent.keyName = minus
 				oppositeAxis = plus
 			else
 				-- We had an exact 0 so throw both key up events for this axis
-				event.keyName = minus
+				KeyEvent.keyName = minus
 				oppositeAxis = plus
 			end
 
 			if abs(value) > deadZone then
 				-- Throw the opposite axis if it was last pressed
 				if eventCache[oppositeAxis] then
-					event.phase = "up"
+				--	event.phase = "up"
 					eventCache[oppositeAxis] = false
-					event.keyName = oppositeAxis
-					Runtime:dispatchEvent( event )
+				--	event.keyName = oppositeAxis
+				--	Runtime:dispatchEvent( event )
+					SendKeyEvent("up", oppositeAxis)
 				end
 
 				-- Throw this axis if it wasn't last pressed
-				if not eventCache[event.keyName] then
-					event.phase = "down"
-					eventCache[event.keyName] = true
-					Runtime:dispatchEvent( event )
+				if not eventCache[KeyEvent.keyName] then
+				--	event.phase = "down"
+					eventCache[KeyEvent.keyName] = true
+				--	Runtime:dispatchEvent( event )
+					SendKeyEvent("down")
 				end
 			else
 				-- We're back toward center
-				if eventCache[event.keyName] then
-					event.phase = "up"
-					eventCache[event.keyName] = false
-					Runtime:dispatchEvent( event )
+				if eventCache[KeyEvent.keyName] then
+				--	event.phase = "up"
+					eventCache[KeyEvent.keyName] = false
+				--	Runtime:dispatchEvent( event )
+					SendKeyEvent("up")
 				end
 
 				if eventCache[oppositeAxis] then
-					event.phase = "up"
+				--	event.phase = "up"
 					eventCache[oppositeAxis] = false
-					event.keyName = oppositeAxis
-					Runtime:dispatchEvent( event )
+				--	event.keyName = oppositeAxis
+				--	Runtime:dispatchEvent( event )
+					SendKeyEvent("up", oppositeAxis)
 				end
 			end
 		end
