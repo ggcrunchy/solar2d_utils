@@ -72,9 +72,83 @@ function M.AddVertex (uvs, vertices, x, y, w, h)
 	vertices[#vertices + 1] = y
 end
 
+local function ScrubAndCopy (into, from)
+	for k in pairs(into) do
+		into[k] = nil
+	end
+
+	for k, v in pairs(from) do
+		into[k] = v
+	end
+end
+
+local function ScrubAndBind (from, params, map)
+	ScrubAndCopy(map, from.index_map or map) -- if absent, "copy" from self once scrubbed
+	ScrubAndCopy(params, from)
+
+	params.index_map = map
+end
+
+local function StitchQuadrantArc (index, n, ncurve, overlap, params, map, kind, u1, u2, nkeep, nwrap, from)
+	local arc1_base = index + ncurve + 1 -- (index - 1) + (ncurve + 1) + 1 - i
+
+	index = index + n - overlap
+	params.index, params.kind, params.u1, params.u2 = index, kind, u1, u2
+
+	local arc2_base = index - 1 -- (index - 1) + (n - overlap) + i
+	local ninc = overlap - (nwrap or 0)
+
+	for i = 1, ninc do
+		map[arc2_base + i] = arc1_base - i
+	end
+
+	if nwrap then
+		local to = arc2_base + ninc
+
+		from = from and from + nwrap or nwrap + 1
+
+		for i = 1, nwrap do
+			map[to + i] = from - i
+		end
+	end
+
+	_NewQuadrantArc_(params)
+
+	for i = 1, overlap - nkeep do
+		map[arc2_base + i] = nil
+	end
+
+	return index
+end
+
+local CrossParams, CrossMap = {}, {}
+
 --- DOCME
-function M.NewCross ()
-	-- TODO!
+function M.NewCross (params)
+	ScrubAndBind(params, CrossParams, CrossMap)
+
+	local umid, u1, u2 = params.u_mid or .5, params.u1, params.u2
+
+	CrossParams.kind = "lower_left"
+	CrossParams.width, CrossParams.height = params.width / 2, params.height / 2
+	CrossParams.u_corner, CrossParams.v_corner = params.u_corner or .25, params.v_corner or .25
+	CrossParams.u1, CrossParams.u2, CrossParams.v = u1, umid, params.v or .5
+
+	local index, uvs, verts, indices = params.index or 1, _NewQuadrantArc_(CrossParams)
+	local start = index
+
+	CrossParams.uvs, CrossParams.vertices, CrossParams.indices = uvs, verts, indices
+
+	local ncurve = params.ncurve -- at this point any asserts will have fired
+	local half, stride = ncurve / 2, params.stride or ncurve + 1
+	local n, overlap = (params.nradius + 1) * stride, half + 1
+
+	index = StitchQuadrantArc(index, n, ncurve, overlap, CrossParams, CrossMap, "lower_right", umid, u2, 1)
+	index = StitchQuadrantArc(index, n, ncurve, overlap, CrossParams, CrossMap, "upper_right", u2, umid, 1)
+
+	StitchQuadrantArc(index, n, ncurve, ncurve + 1, CrossParams, CrossMap, "upper_left", umid, u2, ncurve + 1, overlap - 1, start)
+
+	return uvs, verts, indices
 end
 
 local function DefBeginRow () end
@@ -236,8 +310,23 @@ local Ox, Oy, Px, Py, Qx, Qy
 local PrevRow, CurRow = {}, {}
 local Index, RI, VI
 
+local function FindIndex (index_map, index)
+	local mindex, last = index_map[index]
+
+	if mindex ~= nil then
+		print("FOR ", index)
+		repeat
+			print("M",mindex)
+			last, mindex = mindex, index_map[mindex]
+		until not mindex -- false or nil
+		print("")
+	end
+
+	return last
+end
+
 local function CheckIndex (index_map, di)
-	local mindex = index_map[Index]
+	local mindex = FindIndex(index_map, Index)
 
 	CurRow[RI], RI, Index, VI = mindex or Index, RI + 1, Index + di, VI + 2 * di -- n.b. mindex == false will load Index
 
@@ -341,16 +430,6 @@ local function ResolveNubCoreDeltas (params, kind)
 	end
 end
 
-local function ScrubAndCopy (into, from)
-	for k in pairs(into) do
-		into[k] = nil
-	end
-
-	for k, v in pairs(from) do
-		into[k] = v
-	end
-end
-
 local function NubRing (params, k1, k2, fx, fy, v2)
 	v2 = params.v2 or v2
 
@@ -406,10 +485,7 @@ end
 
 --- DOCME
 function M.NewNub (params)
-	ScrubAndCopy(NubMap, params.index_map or NubMap) -- if absent, "copy" from self once scrubbed
-	ScrubAndCopy(NubParams, params)
-
-	NubParams.index_map = NubMap
+	ScrubAndBind(params, NubParams, NubMap)
 
 	local kind = params.kind
 
@@ -467,11 +543,9 @@ end
 
 --- DOCME
 function M.NewQuadrantArc (params)
-	ScrubAndCopy(QuadArcMap, params.index_map or QuadArcMap) -- if absent, "copy" from self once scrubbed
-	ScrubAndCopy(QuadArcParams, params)
+	ScrubAndBind(params, QuadArcParams, QuadArcMap)
 
 	QuadArcParams.before = CornerSegmentPair
-	QuadArcParams.index_map = QuadArcMap
 
 	local ncurve, nradius = params.ncurve, params.nradius
 
@@ -521,11 +595,6 @@ function M.NewQuadrantArc (params)
 	CornerU, CornerV = params.u_corner or .5, params.v_corner or v
 
 	return _NewQuadrantRing_(QuadArcParams)
-
-	-- two-segments could be essentially in one go
-		-- would then just do quads as with any curve
-		-- in fact could always do quad for each quadrant arc, since we only ignore the two-segments
-	-- stitching entails using reverse direction or at least mapping the final column
 end
 
 local function GetRingParams (params)
@@ -640,11 +709,56 @@ function M.NewQuadrantRing (params)
 	return uvs, verts, indices
 end
 
+local JunctionMap, JunctionParams = {}, {}
+
 --- DOCME
 function M.NewTJunction (params)
-	-- TODO!
-	-- two NewQuadrantArc()s
-	-- one rect (not necessarily .5 of the way, though)
+	ScrubAndBind(params, JunctionParams, JunctionMap)
+
+	local kind, umid, u1, u2, k1, k2 = params.kind, params.u_mid or .5, params.u1, params.u2
+
+	if kind == "top" then
+		k1, k2 = "lower_left", "lower_right"
+	elseif kind == "left" then
+		k1, k2 = "upper_left", "lower_left"
+	elseif kind == "right" then
+		k1, k2 = "lower_right", "upper_right"
+	else
+		k1, k2 = "upper_right", "upper_left"
+	end
+
+	if kind == "left" or kind == "right" then
+		JunctionParams.height = params.height / 2
+		JunctionParams.v = params.v or .5
+	else
+		JunctionParams.width = params.width / 2
+	end
+
+	JunctionParams.kind = k1
+	JunctionParams.u1, JunctionParams.u2 = u1, umid
+
+	local index, uvs, verts, indices = params.index or 1, _NewQuadrantArc_(JunctionParams)
+	local ncurve = params.ncurve -- at this point any asserts will have fired
+	local half, stride = ncurve / 2, params.stride or ncurve + 1
+	local n, overlap = (params.nradius + 1) * stride, half + 1
+	local arc1_base = index + ncurve + 1 -- (index - 1) + (ncurve + 1) + 1 - i
+
+	index = index + n - overlap
+	JunctionParams.uvs, JunctionParams.vertices, JunctionParams.indices = uvs, verts, indices
+	JunctionParams.index, JunctionParams.kind = index, k2
+	JunctionParams.u1, JunctionParams.u2 = umid, u2
+
+	local arc2_base = index - 1 -- (index - 1) + (n - overlap) + i
+
+	for i = 1, overlap do
+		JunctionMap[arc2_base + i] = arc1_base - i
+	end
+
+	_NewQuadrantArc_(JunctionParams)
+
+	-- TODO: allow rectangle annex along junction edge (to fine-tune the uvs, basically)
+
+	return uvs, verts, indices
 end
 
 -- Cache module members.
