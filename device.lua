@@ -256,15 +256,10 @@ end
 
 -- Adapted from ponywolf's joykey:
 do
-	local deadZone = 0.333
+	local DeadZone = 0.333
 
-	-- Store previous events
-	local eventCache = {}
+	local cache, map = {}, {}
 
-	-- Store key mappings
-	local map = {}
-
-	-- Map the axis to arrow keys and wsad
 	map["axis1-"] = "left"
 	map["axis1+"] = "right"
 	map["axis2-"] = "up"
@@ -278,73 +273,48 @@ do
 	local KeyEvent = { name = "key" }
 
 	local function SendKeyEvent (phase, key_name)
-		if key_name then
-			KeyEvent.keyName = key_name
-		end
-	
-		KeyEvent.phase = phase
+		KeyEvent.keyName, KeyEvent.phase = key_name, phase
 	
 		Runtime:dispatchEvent(KeyEvent)
 	end
 
 	-- Capture the axis event
 	local function AxisToKey (event)
-		local num = event.axis.number or 1
-		local name = "axis" .. num
-		local value = event.normalizedValue
-		local oppositeAxis = "none"
-
-		--
+		local name = "axis" .. (event.axis.number or 1)
 		local dtype, plus, minus = event.device.type, map[name .. "+"], map[name .. "-"]
 
 		if plus and (dtype == "gamepad" or dtype == "joystick") then
-		--	event.name = "key"  -- Overide event type
-		
-			-- Set map axis to key
+			local value, key_name, opposite = event.normalizedValue
+
 			if value > 0 then
-				KeyEvent.keyName = plus
-				oppositeAxis = minus
-			elseif value < 0 then
-				KeyEvent.keyName = minus
-				oppositeAxis = plus
+				key_name, opposite = plus, minus
 			else
-				-- We had an exact 0 so throw both key up events for this axis
-				KeyEvent.keyName = minus
-				oppositeAxis = plus
+				key_name, opposite = minus, plus
 			end
 
-			if abs(value) > deadZone then
-				-- Throw the opposite axis if it was last pressed
-				if eventCache[oppositeAxis] then
-				--	event.phase = "up"
-					eventCache[oppositeAxis] = false
-				--	event.keyName = oppositeAxis
-				--	Runtime:dispatchEvent( event )
-					SendKeyEvent("up", oppositeAxis)
+			if abs(value) > DeadZone then
+				if cache[opposite] then
+					cache[opposite] = false
+
+					SendKeyEvent("up", opposite)
 				end
 
-				-- Throw this axis if it wasn't last pressed
-				if not eventCache[KeyEvent.keyName] then
-				--	event.phase = "down"
-					eventCache[KeyEvent.keyName] = true
-				--	Runtime:dispatchEvent( event )
-					SendKeyEvent("down")
+				if not cache[key_name] then
+					cache[key_name] = true
+
+					SendKeyEvent("down", key_name)
 				end
 			else
-				-- We're back toward center
-				if eventCache[KeyEvent.keyName] then
-				--	event.phase = "up"
-					eventCache[KeyEvent.keyName] = false
-				--	Runtime:dispatchEvent( event )
-					SendKeyEvent("up")
+				if cache[key_name] then
+					cache[key_name] = false
+
+					SendKeyEvent("up", key_name)
 				end
 
-				if eventCache[oppositeAxis] then
-				--	event.phase = "up"
-					eventCache[oppositeAxis] = false
-				--	event.keyName = oppositeAxis
-				--	Runtime:dispatchEvent( event )
-					SendKeyEvent("up", oppositeAxis)
+				if cache[opposite] then
+					cache[opposite] = false
+
+					SendKeyEvent("up", opposite)
 				end
 			end
 		end
