@@ -24,12 +24,9 @@
 --
 
 -- Standard library imports --
-local assert = assert
 local char = string.char
 local ipairs = ipairs
-local pairs = pairs
 local tostring = tostring
-local type = type
 
 -- Modules --
 local pconfig = require("config.Persistence")
@@ -100,35 +97,6 @@ Info.config = { columns = [[m_KEY UNIQUE, m_VALUE]] }
 
 for i, v in ipairs(pconfig) do
 	Info.config[i] = v
-end
-
---- Updates configuration data.
---
--- The available keys and value types (the latter must be one of **boolean**, **string**, or
--- **number**) may be retrieved via @{GetConfig}.
--- @ptable change_list Key-value pairs, with new values to assign. Keys not available in the
--- current configuration data are ignored.
---
--- @todo I might need to make that last part explicit with SQLite...
-function M.CommitConfigChanges (change_list)
-	local changes = ""
-
-	for k, v in pairs(change_list) do
-		local vtype = type(v)
-
-		assert(type(k) == "string", "Non-string config key")
-		assert(vtype == "boolean" or vtype == "number" or vtype == "string", "Config value must be boolean, number, or string")
-
-		v = tostring(v)
-
-		if vtype ~= "number" then
-			v = "'" .. v .. "'"
-		end
-
-		changes = changes .. [[UPDATE config SET m_VALUE = ]] .. v .. [[ WHERE m_KEY = ']] .. k .. [[';]]
-	end
-
-	Commit("config", changes)
 end
 
 --- Utility.
@@ -317,12 +285,12 @@ function M.Wipe ()
 	local db = OpenDB("data")
 
 	db:exec[[
-		DROP TABLE IF EXISTS config;
 		DROP TABLE IF EXISTS levels;
 		DROP TABLE IF EXISTS level_wips;
 	]]
-
 	db:close()
+	
+	system.deletePreferences("app", { "has_played_before", "completed" })
 
 	Loaded = {}
 end

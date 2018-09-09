@@ -25,16 +25,11 @@
 
 -- Standard library imports --
 local random = math.random
-local type = type
-
--- Modules --
-local sqlite_db = require("tektite_core.sqlite_db")
 
 -- Corona modules --
 local composer = require("composer")
 
 -- Cached module references --
-local _GetDescription_
 local _GoToScene_
 local _Send_
 local _SetListenFunc_
@@ -57,11 +52,6 @@ function M.ComingFrom ()
 	local prev = composer.getSceneName("previous")
 
 	return Aliases[prev] or prev
-end
-
---- DOCME
-function M.GetDescription (db, name)
-	return sqlite_db.GetOneValueInTable(db, "descriptions", name, "m_NAME")
 end
 
 -- Arguments to composer.gotoScene --
@@ -163,28 +153,6 @@ do
 	end
 end
 
--- --
-local Columns = [[m_NAME VARCHAR, m_DESCRIPTION VARCHAR]]
-
--- --
-local DB = sqlite_db.CachedReader()
-
---- DOCME
-function M.UpdateDescription (db, key)
-	local name = composer.getSceneName("current")
-	local scene = composer.getScene(name)
-	local desc = scene[key]
-
-	if scene and desc and desc ~= _GetDescription_(db, name) then
-		DB:Begin()
-
-		sqlite_db.EnsureTable(DB, "descriptions", Columns)
-		sqlite_db.InsertOrReplace_KeyData(DB, "descriptions", name, desc, Columns)
-
-		DB:End(db)
-	end
-end
-
 --- Convenience function, e.g. for callbacks: will @{Send} **"message:wants\_to\_go\_back"**
 -- to the current scene listener.
 function M.WantsToGoBack ()
@@ -192,7 +160,6 @@ function M.WantsToGoBack ()
 end
 
 -- Cache module members.
-_GetDescription_ = M.GetDescription
 _GoToScene_ = M.GoToScene
 _Send_ = M.Send
 _SetListenFunc_ = M.SetListenFunc

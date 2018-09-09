@@ -25,14 +25,11 @@
 
 -- Standard library imports --
 local assert = assert
-local find = string.find
-local gsub = string.gsub
 local ipairs = ipairs
 local max = math.max
 local open = io.open
 local pairs = pairs
 local remove = os.remove
-local sub = string.sub
 local type = type
 
 -- Modules --
@@ -45,7 +42,6 @@ local timer = timer
 
 -- Corona modules --
 local lfs = require("lfs")
-local sqlite3 = require("sqlite3")
 
 -- Cached module references --
 local _EnumerateFiles_
@@ -182,23 +178,6 @@ end
 -- Is this running on an Android device? --
 local OnAndroid = system.getInfo("platform") == "android" and not OnSimulator
 
--- Helper to resolve a directory-associated database's path
-local function DatabasePath (path)
-	return PathForFile(gsub(path, "/", "__") .. ".sqlite3")
-end
-
--- 
-local function OpenDatabase (path)
-	local db_path = DatabasePath(path)
-	local db_file = db_path and open(db_path)
-
-	if db_file then
-		db_file:close()
-
-		return sqlite3.open(db_path)
-	end
-end
-
 --- Enumerates files in a given directory.
 -- @string path Directory path.
 -- @ptable[opt] opts Enumeration options. Fields:
@@ -215,21 +194,11 @@ function M.EnumerateFiles (path, opts, into)
 
 	into = into or {}
 
-	-- In the resource directory on Android, try to build a file list from a database.
+	-- In the resource directory on Android, try to build a file list from the assets.
 	local enumerate, respath
 
 	if OnAndroid and IsResourceDir(base) then
-		local db = OpenDatabase(path)
-
-		if db then
-			enumerate, respath = pairs, {}
-
-			for name in db:urows[[SELECT m_NAME FROM files]] do
-				respath[name] = true
-			end
-
-			db:close()
-		end
+		-- TODO: AssetReader
 
 	-- Otherwise, read the directory if it exists.
 	else
@@ -263,23 +232,6 @@ function M.Exists (name, base)
 	return file ~= nil
 end
 
--- Helper to find the next database that can be resolved from a given path
-local function FindDatabase (path, from)
-	repeat
-		local index = find(path, "/", from)
-
-		if index then
-			local db = OpenDatabase(sub(path, 1, index - 1))
-
-			from = index + 1
-
-			if db then
-				return db, from
-			end
-		end
-	until not index
-end
-
 -- Attempts to read the binary contents of a file
 local function GetFileContents (name)
 	local file, contents = open(name, "rb")
@@ -295,74 +247,11 @@ end
 
 --- DOCME
 function M.GetContents (path, base)
-	-- If this is Android's resource directory, split the path up into name-key pairs: the name
-	-- identifies the database; if that exists, the key is used to look up an entry in its files
-	-- table. Try the combinations one by one, from shortest to longest name, returning the
-	-- associated contents on any hit.
 	if OnAndroid and IsResourceDir(base) then
-		local from = 1
-
-		repeat
-			local db, index = FindDatabase(path, from)
-
-			if db then
-				local contents
-
-				for blob in db:urows([[SELECT m_CONTENTS FROM files WHERE m_NAME = ']] .. sub(path, index) .. [[']]) do
-					contents = blob
-				end
-
-				db:close()
-
-				if contents then
-					return contents
-				else
-					from = index
-				end
-			end
-			-- ^^ TODO: table existence, add Select utility to db module
-		until not db
+		-- TODO: AssetReader
+	else
+		return GetFileContents(PathForFile(path, base))
 	end
-
-	-- Otherwise, try to read the file directly.
-	return GetFileContents(PathForFile(path, base))
-end
-
--- Helper to populate a resource directory database
-local function PopulateDatabase (path, popts)
-	-- Open or create the database. If already extant, erase the now-defunct files table. Add a
-	-- fresh files table. In general multiple files are added, so begin a compound transaction.
-	local db = sqlite3.open(DatabasePath(path))
-
-	db:exec[[
-		DROP TABLE IF EXISTS files;
-		CREATE TABLE files (m_NAME VARCHAR, m_CONTENTS BLOB);
-		BEGIN;
-	]]
-
-	-- Enumerate files in the resource directory and add all valid ones to the database, adding
-	-- their contents if requested. Such contents may be completely general, viz. to possibly
-	-- contain SQL, so a prepared statement is used to sanitize such input.
-	local files, get_contents = _EnumerateFiles_(path, popts), popts and popts.get_contents
-
-	if #files > 0 then
-		local statement = db:prepare[[INSERT INTO files VALUES(?, ?)]]
-
-		for _, file in ipairs(files) do
-			if file ~= "." and file ~= ".." then
-				statement:bind(1, file)
-				statement:bind_blob(2, get_contents and GetFileContents(PathForFile(path .. "/" .. file)) or "")
-				statement:step()
-				statement:reset()
-			end
-		end
-
-		statement:finalize()
-	end
-
-	-- Commit all inserts.
-	db:exec[[COMMIT;]]
-	db:close()
 end
 
 --- DOCME
@@ -518,33 +407,13 @@ end
 -- * **"modified"**: File was modified while being watched.
 -- @ptable[opt] opts Watch options. Fields:
 --
--- * **exts**: As per @{EnumerateFiles}.
 -- * **base**: As per @{EnumerateFiles}.
--- * **get_contents**: DDDD
 -- @treturn TimerHandle A timer, which may be cancelled.
 function M.WatchForFileModification (path, func, opts)
 	local base = opts and opts.base
 	local is_res_dir, respath, modtime = IsResourceDir(base)
 
 	if OnSimulator or not is_res_dir then
-		-- If this is in the resource directory on the simulator, build up an initial database from
-		-- whatever is found in the directory. Hijack the on-modification function to make updates
-		-- to the database, as well.
-		if is_res_dir then
-			local popts = opts and { exts = opts.exts, get_contents = opts.get_contents }
-
-			PopulateDatabase(path, popts)
-
-			local old = func
-
-			function func (path, how)
-				PopulateDatabase(path, popts)
-
-				old(path, how)
-			end
-		end
-
-		-- Periodically check the file and respond to any modifications.
 		return timer.performWithDelay(50, function()
 			respath = respath or PathForFile(path, base)
 
