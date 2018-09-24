@@ -140,6 +140,7 @@ do
 	-- previous scene" behavior.
 	-- @string name Name of return scene; if absent, uses `composer.getSceneName("previous")`.
 	-- @string[opt="fade"] effect Effect to play on going back, or **"none"** to go immediately.
+	-- @treturn ?callable Previous scene listener, or **nil** if absent.
 	function M.SetListenFunc_GoBack (name, effect)
 		Name = name or composer.getSceneName("previous")
 
@@ -149,7 +150,7 @@ do
 			Effect = effect or "fade"
 		end
 
-		_SetListenFunc_(GoBack)
+		return _SetListenFunc_(GoBack)
 	end
 end
 

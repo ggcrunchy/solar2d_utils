@@ -277,15 +277,7 @@ local function LeaveLevel ()
 end
 
 -- Listen to events.
-for k, v in pairs{
-	-- Leave Level --
-	leave_level = LeaveLevel,
-
-	-- Leave Menus --
-	leave_menus = LeaveLevel
-} do
-	Runtime:addEventListener(k, v)
-end
+Runtime:addEventListener("leave_level", LeaveLevel)
 
 -- Export the module.
 return M

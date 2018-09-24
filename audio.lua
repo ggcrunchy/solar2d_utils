@@ -39,6 +39,7 @@ local indexOf = table.indexOf
 -- Modules --
 local array_funcs = require("tektite_core.array.funcs")
 local file = require("corona_utils.file")
+local meta = require("tektite_core.table.meta")
 
 -- Corona globals --
 local audio = audio
@@ -75,9 +76,9 @@ local Opts = {}
 local DeferredPlay
 
 --
-local function Backfill (i, n)
-	DeferredPlay[i], DeferredPlay[i + 1], DeferredPlay[i + 2] = DeferredPlay[n - 2], DeferredPlay[n - 1], DeferredPlay[n]
-	DeferredPlay[n - 2], DeferredPlay[n - 1], DeferredPlay[n] = nil
+local function Backfill3 (t, i, n)
+	t[i], t[i + 1], t[i + 2] = t[n - 2], t[n - 1], t[n]
+	t[n - 2], t[n - 1], t[n] = nil
 
 	return n - 3
 end
@@ -108,7 +109,7 @@ local function AuxPlay (group, handles, name)
 							AuxPlay(dgroup, dhandles, dname)
 						end
 
-						n = Backfill(i, n)
+						n = Backfill3(DeferredPlay, i, n)
 					end
 				end
 
@@ -147,10 +148,11 @@ local function AuxPlay (group, handles, name)
 			local nloops, opts = info.m_loop_count
 
 			if nloops or complete then
-				Opts.loops, Opts.onComplete, opts = nloops, complete, opts
+				Opts.loops, Opts.onComplete, opts = nloops, complete, Opts
 			end
 
-			channels[#channels + 1] = audio.play(handle, opts)
+			channels[#channels + 1] = audio.play(handle, opts) -- TODO: in theory this could fail due to channel starvation, but some of these might
+																-- be evicted after fading out... (just keep counter, I suppose, and dole them out)
 
 		-- If audio is off, but the sound still has on-complete logic, approximate the play
 		-- time with a timer, and be ready to handle stops.
@@ -215,191 +217,197 @@ end
 -- Groups of related audio, e.g. all sounds related to a type of object --
 local Groups = {}
 
+-- Group methods --
+local SoundGroup = {}
+
+--- DOCME
+function SoundGroup:IsActive ()
+	if IsQuiet then
+		local qs = self.m_quiet_state
+
+		for i = 1, #(qs or "") do
+			if qs[i].complete then
+				return true
+			end
+		end
+	else
+		local channels = self.m_channels
+
+		for i = 1, #channels do
+			if audio.isChannelActive(channels[i]) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+--- Initializes a group. This must be called before the group is used to play any sounds.
+--
+-- After loading, this will be a no-op until the level is unloaded.
+function SoundGroup:Load ()
+	if rawequal(self.m_handles, None) then
+		local handles = {}
+
+		if running() then
+			if not DeferredLoad then
+				DeferredLoad = {}
+
+				DeferredLoad.timer = timer.performWithDelay(5, function(event)
+					for i = #DeferredLoad - 1, 1, -2 do
+						LoadInfo(DeferredLoad[i], DeferredLoad[i + 1])
+
+						DeferredLoad[i], DeferredLoad[i + 1] = nil
+					end
+
+					DeferredLoad.nframes = DeferredLoad.nframes - 1
+
+					if DeferredLoad.nframes == 0 then
+						timer.cancel(event.source)
+
+						DeferredLoad = nil
+					end
+				end, 0)
+			end
+
+			for k in pairs(self.m_info) do
+				handles[k] = "loading"
+			end
+
+			DeferredLoad.nframes = (DeferredLoad.nframes or 0) + 10
+			DeferredLoad[#DeferredLoad + 1] = handles
+			DeferredLoad[#DeferredLoad + 1] = self.m_info
+		else
+			LoadInfo(handles, self.m_info)
+		end
+
+		self.m_handles = handles
+	end
+end
+
+--- DOCME
+function SoundGroup:PauseAll ()
+	if IsQuiet then
+		local qs = self.m_quiet_state
+
+		for i = 1, #(qs or "") do
+			local state = qs[i]
+
+			if state.timer and not state.is_paused then
+				timer.pause(state.timer)
+
+				state.is_paused = true
+			end
+		end
+	else
+		for _, channel in ipairs(self.m_channels) do
+			if audio.isChannelPlaying(channel) then
+				audio.pause(channel)
+			end
+		end
+	end
+end
+
+--- Utility.
+-- @param name Name of sound to play.
+-- @uint[opt] delay Optional delay, in milliseconds, before playing.
+-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
+function SoundGroup:PlaySound (name, delay)
+	return Play(self, assert(self.m_handles, "Sound group not loaded"), name, delay)
+end
+
+--- If the group has an array part, plays one of its sounds.
+-- @uint[opt] delay Optional delay, in milliseconds, before playing.
+-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
+function SoundGroup:RandomSound (delay)
+	local handles = assert(self.m_handles, "Sound group not loaded")
+
+	return Play(self, handles, random(#handles), delay)
+end
+
+--- DOCME
+function SoundGroup:Remove ()
+	local index = indexOf(Groups, self)
+
+	if index then
+		self:StopAll()
+
+		ClearHandles(self.m_handles)
+
+		array_funcs.Backfill(Groups, index)
+	end
+end
+
+--- DOCME
+function SoundGroup:ResumeAll ()
+	if IsQuiet then
+		local qs = self.m_quiet_state
+
+		for i = 1, #(qs or "") do
+			local state = qs[i]
+
+			if state.timer and state.is_paused then
+				timer.resume(state.timer)
+
+				state.is_paused = false
+			end
+		end
+	else
+		for _, channel in ipairs(self.m_channels) do
+			if audio.isChannelPaused(channel) then
+				audio.resume(channel)
+			end
+		end
+	end
+end
+
+-- Rewind?
+
+local function StopAllQuiet (group)
+	local qs = group.m_quiet_state
+
+	for i = #(qs or ""), 1, -1 do
+		local state = qs[i]
+
+		if state.timer then
+			timer.cancel(state.timer)
+		end
+
+		if state.complete then
+			state.complete(false)
+		end
+
+		qs[i] = nil
+	end
+end
+
+--- DOCME
+function SoundGroup:StopAll ()
+	if IsQuiet then
+		StopAllQuiet(self)
+	else
+		local channels = self.m_channels
+
+		for i = #channels, 1, -1 do
+			if audio.isChannelActive(channels[i]) then
+				audio.stop(channels[i])
+			end
+
+			channels[i] = nil
+		end
+	end
+end
+
 -- Common logic for making a sound group
 local function AuxNewSoundGroup (info)
-	-- Streamline the sounds list into a group.
-	local SoundGroup = { m_channels = {}, m_handles = None, m_info = info }
+	local group = { m_channels = {}, m_handles = None, m_info = info }
 
-	--- DOCME
-	function SoundGroup:IsActive ()
-		if IsQuiet then
-			local qs = self.m_quiet_state
+	meta.Augment(group, SoundGroup)
 
-			for i = 1, #(qs or "") do
-				if qs[i].complete then
-					return true
-				end
-			end
-		else
-			local channels = self.m_channels
+	Groups[#Groups + 1] = group
 
-			for i = 1, #channels do
-				if audio.isChannelActive(channels[i]) then
-					return true
-				end
-			end
-		end
-
-		return false
-	end
-
-	--- Initializes a group. This must be called before the group is used to play any sounds.
-	--
-	-- After loading, this will be a no-op until the level is unloaded.
-	function SoundGroup:Load ()
-		if rawequal(self.m_handles, None) then
-			local handles = {}
-
-			if running() then
-				if not DeferredLoad then
-					DeferredLoad = {}
-
-					DeferredLoad.timer = timer.performWithDelay(5, function(event)
-						for i = #DeferredLoad - 1, 1, -2 do
-							LoadInfo(DeferredLoad[i], DeferredLoad[i + 1])
-
-							DeferredLoad[i], DeferredLoad[i + 1] = nil
-						end
-
-						DeferredLoad.nframes = DeferredLoad.nframes - 1
-
-						if DeferredLoad.nframes == 0 then
-							timer.cancel(event.source)
-
-							DeferredLoad = nil
-						end
-					end, 0)
-				end
-
-				for k in pairs(self.m_info) do
-					handles[k] = "loading"
-				end
-
-				DeferredLoad.nframes = (DeferredLoad.nframes or 0) + 10
-				DeferredLoad[#DeferredLoad + 1] = handles
-				DeferredLoad[#DeferredLoad + 1] = self.m_info
-			else
-				LoadInfo(handles, self.m_info)
-			end
-
-			self.m_handles = handles
-		end
-	end
-
-	--- DOCME
-	function SoundGroup:PauseAll ()
-		if IsQuiet then
-			local qs = self.m_quiet_state
-
-			for i = 1, #(qs or "") do
-				local state = qs[i]
-
-				if state.timer and not state.is_paused then
-					timer.pause(state.timer)
-
-					state.is_paused = true
-				end
-			end
-		else
-			for _, channel in ipairs(self.m_channels) do
-				if audio.isChannelPlaying(channel) then
-					audio.pause(channel)
-				end
-			end
-		end
-	end
-
-	--- Utility.
-	-- @param name Name of sound to play.
-	-- @uint[opt] delay Optional delay, in milliseconds, before playing.
-	-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
-	function SoundGroup:PlaySound (name, delay)
-		return Play(self, assert(self.m_handles, "Sound group not loaded"), name, delay)
-	end
-
-	--- If the group has an array part, plays one of its sounds.
-	-- @uint[opt] delay Optional delay, in milliseconds, before playing.
-	-- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
-	function SoundGroup:RandomSound (delay)
-		local handles = assert(self.m_handles, "Sound group not loaded")
-
-		return Play(self, handles, random(#handles), delay)
-	end
-
-	--- DOCME
-	function SoundGroup:Remove ()
-		local index = indexOf(Groups, self)
-
-		if index then
-			self:StopAll()
-
-			ClearHandles(self.m_handles)
-
-			array_funcs.Backfill(Groups, index)
-		end
-	end
-
-	--- DOCME
-	function SoundGroup:ResumeAll ()
-		if IsQuiet then
-			local qs = self.m_quiet_state
-
-			for i = 1, #(qs or "") do
-				local state = qs[i]
-
-				if state.timer and state.is_paused then
-					timer.resume(state.timer)
-
-					state.is_paused = false
-				end
-			end
-		else
-			for _, channel in ipairs(self.m_channels) do
-				if audio.isChannelPaused(channel) then
-					audio.resume(channel)
-				end
-			end
-		end
-	end
-
-	-- Rewind?
-
-	--- DOCME
-	function SoundGroup:StopAll ()
-		if IsQuiet then
-			local qs = self.m_quiet_state
-
-			for i = #(qs or ""), 1, -1 do
-				local state = qs[i]
-
-				if state.timer then
-					timer.cancel(state.timer)
-				end
-
-				if state.complete then
-					state.complete(false)
-				end
-
-				qs[i] = nil
-			end
-
-		else
-			local channels = self.m_channels
-
-			for i = #channels, 1, -1 do
-				if audio.isChannelActive(channels[i]) then
-					audio.stop(channels[i])
-				end
-
-				channels[i] = nil
-			end
-		end
-	end
-
-	--
-	Groups[#Groups + 1] = SoundGroup
-
-	return SoundGroup
+	return group
 end
 
 --
@@ -487,12 +495,77 @@ local function ClearDeferredItems ()
 	DeferredPlay, DeferredLoad = nil
 end
 
+local TaperFrames = 10
+
+local TaperList
+
+local VolumeOpts = {}
+
+local function TaperOut (group, clear)
+	local channels, handles = group.m_channels, group.m_handles
+
+	if #channels > 0 then
+		TaperList = TaperList or {
+			timer = timer.performWithDelay(50, function(event)
+				local n = #TaperList
+
+				for i = n - 2, 1, -3 do
+					local channels, handles, frame = TaperList[i], TaperList[i + 1], TaperList[i + 2] - 1
+
+					for j = #channels, 1, -1 do
+						local channel, volume = channels[j]
+
+						VolumeOpts.channel = channel
+
+						if audio.isChannelActive(channel) then
+							if frame > 0 then
+								TaperList[i + 2], volume = frame, frame / TaperFrames
+							else
+								audio.stop(channel)
+							end
+						end
+
+						audio.setVolume(volume or 1, VolumeOpts) -- restore to 1 if removing
+
+						if not volume then
+							array_funcs.Backfill(channels, j)
+						end
+					end
+
+					if #channels == 0 then
+						n = Backfill3(TaperList, i, n)
+
+						if handles then
+							ClearHandles(handles)
+						end
+					end
+				end
+
+				if n == 0 then
+					timer.cancel(event.source)
+
+					TaperList = nil
+				end
+			end, 0)
+		}
+
+		TaperList[#TaperList + 1] = channels
+		TaperList[#TaperList + 1] = clear and handles or false
+		TaperList[#TaperList + 1] = TaperFrames
+	elseif clear then
+		ClearHandles(handles)
+	end
+end
+
 -- Leave Level response
 local function LeaveLevel ()
 	for _, group in ipairs(Groups) do
-		group:StopAll()
-
-		ClearHandles(group.m_handles)
+		if IsQuiet then
+			StopAllQuiet(group)
+			ClearHandles(group.m_handles)
+		else
+			TaperOut(group, true)
+		end
 
 		group.m_handles = None
 	end
@@ -505,16 +578,17 @@ for k, v in pairs{
 	-- Leave Level --
 	leave_level = LeaveLevel,
 
-	-- Leave Menus --
-	leave_menus = LeaveLevel,
-
 	-- Reset Level --
 	reset_level = function()
 		for _, group in ipairs(Groups) do
-			group:StopAll()
+			if IsQuiet then
+				StopAllQuiet(group)
+			else
+				TaperOut(group)
+			end
 
 			for _, sinfo in pairs(group.m_info) do
-				sinfo.time = nil
+				sinfo.m_time = nil
 			end
 		end
 
