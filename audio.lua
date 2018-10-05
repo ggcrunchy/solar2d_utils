@@ -148,7 +148,7 @@ local function AuxPlay (group, handles, name)
 			local nloops, opts = info.m_loop_count
 
 			if nloops or complete then
-				Opts.loops, Opts.onComplete, opts = nloops, complete, Opts
+				Opts.loops, Opts.onComplete, opts = nloops, complete, Opts -- TODO: verify on_complete use cases...
 			end
 
 			channels[#channels + 1] = audio.play(handle, opts) -- TODO: in theory this could fail due to channel starvation, but some of these might
@@ -501,7 +501,7 @@ local TaperList
 
 local VolumeOpts = {}
 
-local function TaperOut (group, clear)
+local function TaperOut (group, clear) -- TODO: didn't realize there was an audio.fadeOut()! :P
 	local channels, handles = group.m_channels, group.m_handles
 
 	if #channels > 0 then
