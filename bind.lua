@@ -276,6 +276,14 @@ function M.BroadcastBuilder_Helper (name)
 	return broadcast_helper
 end
 
+-- --
+local Commands = meta.Weak("k")
+
+--- DOCME
+function M.GetActionCommands (action)
+	return Commands[action]
+end
+
 -- Event iterator body
 local function AuxEvent (event, index)
 	if not index then
@@ -285,14 +293,6 @@ local function AuxEvent (event, index)
 	elseif index > 0 then
 		return index - 1, event("i", index)
 	end
-end
-
--- --
-local Commands = meta.Weak("k")
-
---- DOCME
-function M.GetActionCommands (action)
-	return Commands[action]
 end
 
 --- Convenience routine for iterating the component events that make up a broadcast (i.e. a
