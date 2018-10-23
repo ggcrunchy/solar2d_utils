@@ -103,6 +103,7 @@ local function TryOutProps (elem, esub, props, pkey)
 end
 
 --- DOCME
+-- should streamline a bit of this, into imports and exports
 function M.PrepLink (elem, other, esub, osub)
 	local helper, events, actions, akey, iprops, oprops, pkey, itls, instance_ids
 
@@ -160,6 +161,43 @@ function M.PrepLink (elem, other, esub, osub)
 	Helper = nil -- errors might leave helper in inconsistent state, so detach until commitment
 
 	return helper
+end
+
+--- DOCME
+-- the stuff that follows suggests some restructuring...
+function M.PrepLinkHelper (prep_link_base, command)
+	local funcs, cfuncs = {}
+
+	local function prep_link_ex (object, other, osub, other_sub, links)
+		if not funcs[object.type](object, other, osub, other_sub, links) then
+			prep_link_base(object, other, osub, other_sub, links)
+		end
+	end
+
+	return function(object_type, event, arg1, arg2)
+		local prep = funcs[object_type]
+
+		if prep then
+			return prep, cfuncs and cfuncs[object_type]
+		else
+			local func, cleanup, how = event(command, prep_link_base, arg1, arg2)
+
+			if (how or cleanup) == "complete" then -- allow optional cleanup as well
+				return func, cleanup ~= "complete" and cleanup
+			elseif func then
+				funcs[object_type] = func
+
+				if cleanup then
+					cfuncs = cfuncs or {}
+					cfuncs[object_type] = cleanup
+				end
+
+				return prep_link_ex, cleanup
+			else
+				return prep_link_base
+			end
+		end
+	end, prep_link_ex
 end
 
 return M
