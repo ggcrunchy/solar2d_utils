@@ -51,27 +51,6 @@ Entity.__index = Entity
 
 local EventCache = {}
 
---- DOCME
-function Entity:SendMessage (what, ...)
-    local event = remove(EventCache) or { args = {} }
-
-    event.n, event.name, event.result = collect.CollectArgsInto(event.args, ...), what
-
-    local args, n = event.args, event.n -- n.b. saved in case modified
-
-    self:dispatchEvent(event)
-
-    for i = n, 1, -1 do
-        args[i] = nil
-    end
-
-    event.args = args
-
-    EventCache[#EventCache + 1] = event
-
-    return event.result
-end
-
 local function Finalize (event)
     component.RemoveAll(event.target)
 end
@@ -81,8 +60,8 @@ local DisplayObjectMT = meta.Weak("k")
 local function IsDisplayObject (object)
     local mt = getmetatable(object)
 
-    if DisplayObjectMT[mt] then
-        return true
+    if mt == nil or DisplayObjectMT[mt] then -- vanilla table or already classified
+        return mt ~= nil
     else
         local stage = display.getCurrentStage()
 
@@ -98,6 +77,35 @@ local function IsDisplayObject (object)
 
         return false
     end
+end
+
+--- DOCME
+function Entity:SendMessage (what, ...)
+    local event = remove(EventCache) or { args = {} }
+
+    event.n, event.name, event.result = collect.CollectArgsInto(event.args, ...), what
+
+    local args, n = event.args, event.n -- n.b. saved in case modified
+
+    if IsDisplayObject(self) then
+        self:dispatchEvent(event)
+    else
+        local handler = self[what]
+
+        if handler then
+            handler(self, event)
+        end
+    end
+
+    for i = n, 1, -1 do
+        args[i] = nil
+    end
+
+    event.args = args
+
+    EventCache[#EventCache + 1] = event
+
+    return event.result
 end
 
 local Methods = meta.Weak("k")
