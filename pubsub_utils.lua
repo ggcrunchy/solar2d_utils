@@ -200,4 +200,21 @@ function M.PrepLinkHelper (prep_link_base, command)
 	end, prep_link_ex
 end
 
+-- trying to suss out a new format for links
+-- basically a name, predicate, and optional adaptive "parent" list (typically 0 or 1 element)
+-- uint: parent{ int }
+-- int: parent{ number }
+-- e.g. OutNumber = pred{ Is(InNumber) }
+-- e.g. InNumber = pred{ Is(OutNumber) and HasNoLinks() } (values will usually do this, but not actions?)
+
+-- also should provide a way for In* (values) to also fall back to a field (would seem to cover most cases)
+-- could then automate tidying these up
+-- also facilities to couple e.g. with actions
+
+-- All of this WILL make versioning harder, of course :)
+
+-- also some of the functions that make up editor events
+-- e.g. "super" part (event block, action, etc.); part itself; "super" boilerplate; part follow-up
+-- how to compose this w.l.o.g.?
+
 return M
