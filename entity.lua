@@ -143,7 +143,9 @@ Entity.GetInterfaceList = component.GetInterfacesForObject
 Entity.HasComponent = component.FoundInObject
 Entity.Implements = component.ImplementedByObject
 Entity.LockComponent = component.LockInObject
+Entity.RefComponent = component.RefInObject
 Entity.RemoveAllComponents = component.RemoveAllFromObject
 Entity.RemoveComponent = component.RemoveFromObject
+Entity.UnrefComponent = component.UnrefInObject
 
 return M
