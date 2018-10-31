@@ -36,7 +36,7 @@ local adaptive = require("tektite_core.table.adaptive")
 local meta = require("tektite_core.table.meta")
 
 -- Cached module references --
-local _MakeAddress_
+local _MakeEndpoint_
 
 -- Exports --
 local M = {}
@@ -49,8 +49,8 @@ local M = {}
 -- @tparam ?|int|string id
 -- @bool split
 -- @treturn boolean C
-function M.IsAddress (id, split)
-	local is_address = false
+function M.IsEndpoint (id, split)
+	local is_endpoint = false
 
 	if type(id) == "string" then
 		local pos = find(id, ":")
@@ -59,19 +59,19 @@ function M.IsAddress (id, split)
 			if split then
 				return true, tonumber(sub(id, 1, pos - 1)), sub(id, pos + 1)
 			else
-				is_address = true
+				is_endpoint = true
 			end
 		end
 	end
 
-	return is_address
+	return is_endpoint
 end
 
---- Builds an address from an ID and name.
+--- Builds an endpoint from an ID and name.
 -- @int id
 -- @string name
--- @treturn string Composite ID.
-function M.MakeAddress (id, name)
+-- @treturn string Endpoint.
+function M.MakeEndpoint (id, name)
 	return format("%i:%s", id, name)
 end
 
@@ -92,8 +92,7 @@ end
 -- @string name
 function PubSubList:Publish (payload, id, name)
 	if id then
-		id = _MakeAddress_(id, name)
-		self[id] = payload
+		self[_MakeEndpoint_(id, name)] = payload
 	end
 end
 
@@ -127,6 +126,6 @@ function M.New ()
     return list
 end
 
-_MakeAddress_ = M.MakeAddress
+_MakeEndpoint_ = M.MakeEndpoint
 
 return M
