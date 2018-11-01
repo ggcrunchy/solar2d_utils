@@ -45,11 +45,11 @@ local M = {}
 --
 --
 
--- Check whether a candidate is valid, i.e. it resembles a result of _MakeEndpoint_.
+-- Check whether a candidate resembles a result of @{MakeEndpoint}.
 --
--- **N.B.** The current implementation does not rigorously examine the input, merely checking
--- for strings containing a known separator. This is enough to filter out **uint** and **nil**
--- inputs that might be common enough, but not hand-crafted malicious inputs.
+-- **N.B.** Currently this only checks for strings containing a known separator, rather than
+-- rigorously validating the ID and name as well. This suffices to ignore common inputs like
+-- **nil** and non-strings, but is vulnerable to hand-crafted not-quite-endpoints.
 -- @param candidate
 -- @bool split Should an ID and name be returned if this is a valid endpoint?
 -- @return[1] **true**, indicating a valid endpoint.
@@ -75,8 +75,9 @@ function M.IsEndpoint (candidate, split)
 end
 
 --- Builds an endpoint from an ID and name.
--- @uint id
--- @string name
+-- @uint id Identifier for a particular "object". This must be unique within the context of a group
+-- of related @{PubSubList:Publish} and @{PubSubList:Subscribe} calls.
+-- @string name Named feature to request from the "object" through this endpoint.
 -- @treturn string Endpoint.
 function M.MakeEndpoint (id, name)
 	return format("%i:%s", id, name)
@@ -84,7 +85,8 @@ end
 
 local PubSubList = {}
 
---- DOCME
+--- Delivers published payloads to any subscribers waiting for them.
+-- @see PubSubList:Publish, PubSubList:Subscribe, PubSubList:Wipe
 function PubSubList:Dispatch ()
 	for i = 1, #self, 3 do
 		local endpoint, func, arg = self[i], self[i + 1], self[i + 2]
@@ -93,20 +95,31 @@ function PubSubList:Dispatch ()
 	end
 end
 
---- DOCME
--- @param payload
--- @tparam ?|uint|nil id
--- @string name
+--- Make a feature available on the endpoint described by _id_ and _name_, cf.
+-- @{PubSubList:MakeEndpoint}. The payload will be delivered to any subscribers during a
+-- call to @{PubSubList:Dispatch}, cf. @{PubSubList:Subscribe}.
+--
+-- This will overwrite (or remove, given a **nil** _payload_) any payload already published
+-- on the same endpoint.
+-- @param payload Named feature data provided by the "object".
+-- @tparam ?|uint|nil id Identifier for the "object" publishing this feature. This might be
+-- **nil**, in which case the publish is a no-op. (This is intended as a convenience to
+-- streamline certain publishing patterns.)
+-- @tparam ?|string|nil name Name of feature being published. Again, this might be **nil**,
+-- making the publish a no-op.
+-- @see PubSubList:Wipe
 function PubSubList:Publish (payload, id, name)
-	if id then
+	if id and name then
 		self[_MakeEndpoint_(id, name)] = payload
 	end
 end
 
---- 
+--- Listen for any payloads published on _endpoints_, cf. @{PubSubList:Publish}.
 -- @tparam ?|string|{string,...}|nil endpoints 0, 1, or multiple publisher endpoints.
--- @callable func When @{PubSubList:Dispatch} is fired, every satis
+-- @callable func When @{PubSubList:Dispatch} is fired, `func(payload, arg)` will be called
+-- for each requested endpoint with a published payload.
 -- @param[opt=false] arg
+-- @see PubSubList:Wipe
 function PubSubList:Subscribe (endpoints, func, arg)
 	arg = arg or false
 
@@ -117,7 +130,7 @@ function PubSubList:Subscribe (endpoints, func, arg)
 	end
 end
 
---- Wipe all subscribers and payloads from the list.
+--- Wipe all payloads and subscribers from the list.
 -- @see PubSubList:Publish, PubSubList:Subscribe
 function PubSubList:Wipe ()
     for k in pairs(self) do
@@ -125,8 +138,8 @@ function PubSubList:Wipe ()
     end
 end
 
---- DOCME
--- @treturn PubSubList PSL
+---
+-- @treturn PubSubList Pub-sub list.
 function M.New ()
     local list = {}
 

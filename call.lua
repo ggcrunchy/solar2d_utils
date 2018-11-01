@@ -55,6 +55,7 @@ local TryToResetCount = frames.OnFirstCallInFrame(function()
 end)
 
 --- DOCME
+-- @uint n
 function M.AddCalls (n)
 	TryToResetCount()
 
@@ -67,6 +68,7 @@ function M.AddCalls (n)
 end
 
 --- DOCME
+-- @treturn boolean B
 function M.AtLimit ()
 	return Count == Limit
 end
@@ -131,6 +133,8 @@ local function Box (func)
 end
 
 --- DOCME
+-- @treturn function A
+-- @treturn table T
 function M.MakePerObjectCallList ()
 	local object_to_list, list = meta.Weak("k")
 
@@ -173,11 +177,14 @@ end
 local Dispatcher = {}
 
 --- DOCME
+-- @treturn function A
 function Dispatcher:GetAdder ()
     return self.m_add_to_list
 end
 
 --- DOCME
+-- @param object
+-- @param ...
 function Dispatcher:DispatchForObject (object, ...)
     local func = self.m_object_to_list[object]
 
@@ -187,11 +194,14 @@ function Dispatcher:DispatchForObject (object, ...)
 end
 
 --- DOCME
+-- @param object
+-- @treturn iterator Y
 function Dispatcher:IterateFunctionsForObject (object)
     return _IterateCallList_(self.m_object_to_list[object])
 end
 
---- DOCME
+---
+-- @treturn Dispatcher X
 function M.NewDispatcher ()
     local dispatcher = {}
 
@@ -222,6 +232,7 @@ local function AuxList (list, index)
 end
 
 --- DOCME
+-- @treturn iterator X
 function M.IterateCallList (list)
 	return AuxList, list, list and list("n")
 end
@@ -238,6 +249,7 @@ function M.SetActionCommands (action, cmds)
 end
 
 --- DOCME
+-- @uint limit
 function M.SetActionLimit (limit)
 	assert(type(limit) == "number" and limit > 0, "Invalid limit")
 

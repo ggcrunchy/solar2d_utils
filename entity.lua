@@ -29,6 +29,7 @@ local getmetatable = getmetatable
 local rawequal = rawequal
 local remove = table.remove
 local setmetatable = setmetatable
+local type = type
 
 -- Modules --
 local collect = require("tektite_core.array.collect")
@@ -80,6 +81,9 @@ local function IsDisplayObject (object)
 end
 
 --- DOCME
+-- @param what
+-- @param ...
+-- @return R
 function Entity:SendMessage (what, ...)
     local event = remove(EventCache) or { args = {} }
 
@@ -89,7 +93,7 @@ function Entity:SendMessage (what, ...)
 
     if IsDisplayObject(self) then
         self:dispatchEvent(event)
-    else
+    elseif type(self) == "table" then -- TODO: or userdata with __index
         local handler = self[what]
 
         if handler then
@@ -111,6 +115,9 @@ end
 local Methods = meta.Weak("k")
 
 --- DOCME
+-- @param object
+-- @ptable methods
+-- @return _object_.
 function M.Make (object, methods)
     assert(Methods[methods], "Expected result from entity.NewMethods()")
 
@@ -124,6 +131,8 @@ function M.Make (object, methods)
 end
 
 --- DOCME
+-- @param[opt] parent
+-- @treturn table M
 function M.NewMethods (parent)
     assert(parent == nil or Methods[parent], "Expected parent from previous call to entity.NewMethods()")
 
@@ -133,6 +142,24 @@ function M.NewMethods (parent)
     Methods[methods] = true
 
     return methods
+end
+
+local Redirects = meta.Weak("k")
+
+--- DOCME
+-- @param from
+-- @param to
+function M.Redirect (from, to)
+    assert(not Redirects[from], "Already redirected")
+
+    Redirects[from] = to
+end
+
+--- DOCME
+-- @param object
+-- @p
+function M.SendMessageTo (object, what, ...)
+    return Entity.SendMessage(Redirects[object] or object, what, ...)
 end
 
 --
