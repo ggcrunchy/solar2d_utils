@@ -45,19 +45,26 @@ local M = {}
 --
 --
 
--- DOCME
--- @tparam ?|int|string id
--- @bool split
--- @treturn boolean C
-function M.IsEndpoint (id, split)
+-- Check whether a candidate is valid, i.e. it resembles a result of _MakeEndpoint_.
+--
+-- **N.B.** The current implementation does not rigorously examine the input, merely checking
+-- for strings containing a known separator. This is enough to filter out **uint** and **nil**
+-- inputs that might be common enough, but not hand-crafted malicious inputs.
+-- @param candidate
+-- @bool split Should an ID and name be returned if this is a valid endpoint?
+-- @return[1] **true**, indicating a valid endpoint.
+-- @treturn[1] uint The ID preceding the separator...
+-- @treturn[1] string ...and the name following it.
+-- @treturn[2] boolean Was _endpoint_ valid?
+function M.IsEndpoint (candidate, split)
 	local is_endpoint = false
 
-	if type(id) == "string" then
-		local pos = find(id, ":")
+	if type(candidate) == "string" then
+		local pos = find(candidate, ":")
 
 		if pos ~= nil then
 			if split then
-				return true, tonumber(sub(id, 1, pos - 1)), sub(id, pos + 1)
+				return true, tonumber(sub(candidate, 1, pos - 1)), sub(candidate, pos + 1)
 			else
 				is_endpoint = true
 			end
@@ -68,7 +75,7 @@ function M.IsEndpoint (id, split)
 end
 
 --- Builds an endpoint from an ID and name.
--- @int id
+-- @uint id
 -- @string name
 -- @treturn string Endpoint.
 function M.MakeEndpoint (id, name)
@@ -80,15 +87,15 @@ local PubSubList = {}
 --- DOCME
 function PubSubList:Dispatch ()
 	for i = 1, #self, 3 do
-		local address, func, arg = self[i], self[i + 1], self[i + 2]
+		local endpoint, func, arg = self[i], self[i + 1], self[i + 2]
 
-		func(self[address], arg)
+		func(self[endpoint], arg)
 	end
 end
 
 --- DOCME
 -- @param payload
--- @tparam ?|int|nil id
+-- @tparam ?|uint|nil id
 -- @string name
 function PubSubList:Publish (payload, id, name)
 	if id then
@@ -96,21 +103,22 @@ function PubSubList:Publish (payload, id, name)
 	end
 end
 
---- DOCME
--- @tparam ?|string|{string,...} id
--- @callable func
--- @param arg
-function PubSubList:Subscribe (id, func, arg)
+--- 
+-- @tparam ?|string|{string,...}|nil endpoints 0, 1, or multiple publisher endpoints.
+-- @callable func When @{PubSubList:Dispatch} is fired, every satis
+-- @param[opt=false] arg
+function PubSubList:Subscribe (endpoints, func, arg)
 	arg = arg or false
 
-	for _, v in adaptive.IterArray(id) do
+	for _, v in adaptive.IterArray(endpoints) do
 		self[#self + 1] = v
 		self[#self + 1] = func
 		self[#self + 1] = arg
 	end
 end
 
---- DOCME
+--- Wipe all subscribers and payloads from the list.
+-- @see PubSubList:Publish, PubSubList:Subscribe
 function PubSubList:Wipe ()
     for k in pairs(self) do
         self[k] = nil
@@ -118,6 +126,7 @@ function PubSubList:Wipe ()
 end
 
 --- DOCME
+-- @treturn PubSubList PSL
 function M.New ()
     local list = {}
 
