@@ -147,19 +147,27 @@ end
 local Redirects = meta.Weak("k")
 
 --- DOCME
--- @param from
--- @param to
-function M.Redirect (from, to)
-    assert(not Redirects[from], "Already redirected")
+-- @param object
+-- @callable redirect
+function M.Redirect (object, redirect)
+    assert(not Redirects[object], "Already redirected")
 
-    Redirects[from] = to
+    Redirects[object] = redirect
 end
 
 --- DOCME
 -- @param object
--- @p
+-- @param what
+-- @param ...
+-- @return X
 function M.SendMessageTo (object, what, ...)
-    return Entity.SendMessage(Redirects[object] or object, what, ...)
+    local redirect = Redirects[object]
+
+    if redirect then
+        object = redirect(object)
+    end
+
+    return Entity.SendMessage(object, what, ...)
 end
 
 --
