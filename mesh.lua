@@ -78,35 +78,68 @@ end
 --- DOCME
 -- @treturn ?|uint|nil
 function QuadStream:Insert ()
-	local slots = self.m_slots
+	local slots, first = self.m_slots
 	local index, free = embedded_free_list.GetInsertIndex(slots, self.m_free)
 
 	if index <= self.m_capacity then
-		slots[index], index = true, (index - 1) * 4 + 1
+		local iminus1 = index - 1
+		local base = iminus1 * 4
 
-		_AddQuadIndices_(self.m_indices, index, index + 1, index + 2, index + 3, (index - 1) * 6 + 1)
+		slots[index], first = true, 2 * base + 1 -- two coordinates per vertex
+
+		if self.m_index_mode then
+			_AddQuadIndices_(self.m_indices, base + 1, base + 2, base + 3, base + 4, iminus1 * 6 + 1)
+		end
 
 		self.m_free = free
-	else
-		index = nil
 	end
 
-	return index
+	return first
 end
 
 --- DOCME
--- @uint index
+-- @uint first
 function QuadStream:Remove (first)
-	--
+	local qoffset = .125 * (first - 1) -- quad = four corners, two coordinates each
+	local slots, removed = self.m_slots, false
+
+	if embedded_free_list.InUse(slots, qoffset + 1) then
+		self.m_free = embedded_free_list.RemoveAt(slots, qoffset + 1, self.m_free)
+
+		if self.m_index_mode then
+			local index = 2 * qoffset + 1
+
+			_AddQuadIndices_(self.m_indices, index, index, index, index, qoffset * 6 + 1) -- make degenerate
+		end
+
+		removed = true
+	end
+
+	return removed
 end
 
 --- DOCME
-function M.NewQuadStream (n)
+-- @uint n
+-- @string[opt="vertex"] degen
+function M.NewQuadStream (n, degen)
 	local stream, indices = { m_capacity = n, m_slots = {} }, {}
-	local final = n * 4 -- final legal index, will come into use if and when stream saturated
 
-	for i = 1, 6 * n do
-		indices[i] = final
+	if degen == "index" then
+		local final = n * 4 -- final legal index, will come into use if and when stream saturated
+
+		for i = 1, 6 * n do
+			indices[i] = final -- begin with all degenerate
+		end
+
+		stream.m_index_mode = true
+	else
+		local offset = 0
+
+		for i = 1, n do
+			_AddQuadIndices_(indices, offset + 1, offset + 2, offset + 3, offset + 4)
+
+			offset = offset + 4
+		end
 	end
 
 	stream.m_indices = indices
@@ -133,28 +166,6 @@ end
 --- DOCME
 function M.NewTriangleStream (n)
 	--
-end
-
---- DOCME
-function M.ReserveQuads (n)
-	local indices = {}
-
-	for i = 1, 6 * n do
-		indices[i] = n
-	end
-
-	return indices, { 0, 0 }, { 0, 0 }
-end
-
---- DOCME
-function M.ReserveTriangles (n)
-	local indices = {}
-
-	for i = 1, 3 * n do
-		indices[i] = n
-	end
-
-	return indices, { 0, 0 }, { 0, 0 }
 end
 
 -- Cache module members.
