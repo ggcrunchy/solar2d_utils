@@ -53,7 +53,7 @@ Entity.__index = Entity
 local EventCache = {}
 
 local function Finalize (event)
-    component.RemoveAll(event.target)
+    event.target:RemoveAllComponents()
 end
 
 local DisplayObjectMT = meta.Weak("k")
@@ -153,6 +153,17 @@ function M.Redirect (object, redirect)
     assert(not Redirects[object], "Already redirected")
 
     Redirects[object] = redirect
+end
+
+--- DOCME
+-- @treturn function F
+-- @return N 
+function M.SelfRedirecter ()
+    local nonce = {}
+
+    return function(func)
+        return func(nonce)
+    end, nonce
 end
 
 --- DOCME

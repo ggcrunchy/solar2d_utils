@@ -27,13 +27,13 @@
 local find = string.find
 local format = string.format
 local pairs = pairs
+local setmetatable = setmetatable
 local sub = string.sub
 local tonumber = tonumber
 local type = type
 
 -- Modules --
 local adaptive = require("tektite_core.table.adaptive")
-local meta = require("tektite_core.table.meta")
 
 -- Cached module references --
 local _MakeEndpoint_
@@ -84,6 +84,8 @@ function M.MakeEndpoint (id, name)
 end
 
 local PubSubList = {}
+
+PubSubList.__index = PubSubList
 
 --- Delivers published payloads to any subscribers waiting for them.
 -- @see PubSubList:Publish, PubSubList:Subscribe, PubSubList:Wipe
@@ -141,11 +143,13 @@ end
 ---
 -- @treturn PubSubList Pub-sub list.
 function M.New ()
+	--[[
     local list = {}
 
     meta.Augment(list, PubSubList)
 
-    return list
+    return list]]
+	return setmetatable({}, PubSubList)
 end
 
 _MakeEndpoint_ = M.MakeEndpoint
