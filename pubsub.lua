@@ -105,10 +105,10 @@ end
 -- on the same endpoint.
 -- @param payload Named feature data provided by the "object".
 -- @tparam ?|uint|nil id Identifier for the "object" publishing this feature. This might be
--- **nil**, in which case the publish is a no-op. (This is intended as a convenience to
+-- **nil**, in which case publishing is a no-op. (This is intended as a convenience to
 -- streamline certain publishing patterns.)
--- @tparam ?|string|nil name Name of feature being published. Again, this might be **nil**,
--- making the publish a no-op.
+-- @tparam ?|string|nil name Feature being published. Again, this might be **nil** and
+-- thus produce a no-op.
 -- @see PubSubList:Wipe
 function PubSubList:Publish (payload, id, name)
 	if id and name then
@@ -143,12 +143,6 @@ end
 ---
 -- @treturn PubSubList Pub-sub list.
 function M.New ()
-	--[[
-    local list = {}
-
-    meta.Augment(list, PubSubList)
-
-    return list]]
 	return setmetatable({}, PubSubList)
 end
 
