@@ -260,7 +260,6 @@ function M.BroadcastBuilder_Helper (name)
 	-- @tparam ?|string|array|nil id As per @{Subscribe}.
 	-- @string? wname If provided, use the named waiting list.
 	function broadcast_helper.Subscribe (object, id, wname)
-		print("?",debug.traceback())
 		if name == nil then
 			assert(wname ~= nil, "Missing waiting list name")
 

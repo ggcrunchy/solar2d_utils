@@ -23,9 +23,11 @@
 -- [ MIT license: http://www.opensource.org/licenses/mit-license.php ]
 --
 
+-- Standard library imports --
+local setmetatable = setmetatable
+
 -- Modules --
 local embedded_free_list = require("tektite_core.array.embedded_free_list")
-local meta = require("tektite_core.tables.meta")
 
 -- Cached module references --
 local _AddQuadIndices_
@@ -69,6 +71,8 @@ function M.AddVertex (uvs, vertices, x, y, w, h)
 end
 
 local QuadStream = {}
+
+QuadStream.__index = QuadStream
 
 --- DOCME
 function QuadStream:GetIndices ()
@@ -144,9 +148,7 @@ function M.NewQuadStream (n, degen)
 
 	stream.m_indices = indices
 
-	meta.Augment(stream, QuadStream)
-
-	return stream
+	return setmetatable(stream, QuadStream)
 end
 
 local TriangleStream = {}
