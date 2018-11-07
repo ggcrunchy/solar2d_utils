@@ -50,6 +50,46 @@ local Entity = {}
 
 Entity.__index = Entity
 
+--- DOCME
+-- @function Entity:AddComponent
+Entity.AddComponent = component.AddToObject
+
+--- DOCME
+-- @function Entity:CanAddToComponent
+Entity.CanAddComponent = component.CanAddToObject
+
+--- DOCME
+-- @function Entity:GetListForObject
+Entity.GetComponentList = component.GetListForObject
+
+--- DOCME
+-- @function Entity:GetInterfacesForObject
+Entity.GetInterfaceList = component.GetInterfacesForObject
+
+--- DOCME
+-- @function Entity:FoundInObject
+Entity.HasComponent = component.FoundInObject
+
+--- DOCME
+-- @function Entity:ImplementedByObject
+Entity.Implements = component.ImplementedByObject
+
+--- DOCME
+-- @function Entity:LockInObject
+Entity.LockComponent = component.LockInObject
+
+--- DOCME
+-- @function Entity:RefInObject
+Entity.RefComponent = component.RefInObject
+
+--- DOCME
+-- @function Entity:RemoveAllFromObject
+Entity.RemoveAllComponents = component.RemoveAllFromObject
+
+--- DOCME
+-- @function Entity:RemoveFromObject
+Entity.RemoveComponent = component.RemoveFromObject
+
 local EventCache = {}
 
 local function Finalize (event)
@@ -111,6 +151,10 @@ function Entity:SendMessage (what, ...)
 
     return event.result
 end
+
+--- DOCME
+-- @function Entity:UnrefInObject
+Entity.UnrefComponent = component.UnrefInObject
 
 local Methods = meta.Weak("k")
 
@@ -180,18 +224,5 @@ function M.SendMessageTo (object, what, ...)
 
     return Entity.SendMessage(object, what, ...)
 end
-
---
-Entity.AddComponent = component.AddToObject
-Entity.CanAddComponent = component.CanAddToObject
-Entity.GetComponentList = component.GetListForObject
-Entity.GetInterfaceList = component.GetInterfacesForObject
-Entity.HasComponent = component.FoundInObject
-Entity.Implements = component.ImplementedByObject
-Entity.LockComponent = component.LockInObject
-Entity.RefComponent = component.RefInObject
-Entity.RemoveAllComponents = component.RemoveAllFromObject
-Entity.RemoveComponent = component.RemoveFromObject
-Entity.UnrefComponent = component.UnrefInObject
 
 return M

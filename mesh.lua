@@ -46,8 +46,8 @@ local M = {}
 function M.AddQuadIndices (indices, i1, i2, i3, i4, base)
 	base = base or #indices
 
-	_AddTriangleIndices_(indices, i1, i3, i2)
-	_AddTriangleIndices_(indices, i2, i3, i4)
+	_AddTriangleIndices_(indices, i1, i3, i2, base)
+	_AddTriangleIndices_(indices, i2, i3, i4, base + 3)
 end
 
 --- DOCMEMORE
@@ -92,7 +92,7 @@ function QuadStream:Insert ()
 		slots[index], first = true, 2 * base + 1 -- two coordinates per vertex
 
 		if self.m_index_mode then
-			_AddQuadIndices_(self.m_indices, base + 1, base + 2, base + 3, base + 4, iminus1 * 6 + 1)
+			_AddQuadIndices_(self.m_indices, base + 1, base + 2, base + 3, base + 4, iminus1 * 6)
 		end
 
 		self.m_free = free
@@ -139,7 +139,7 @@ function M.NewQuadStream (n, degen)
 	else
 		local offset = 0
 
-		for i = 1, n do
+		for _ = 1, n do
 			_AddQuadIndices_(indices, offset + 1, offset + 2, offset + 3, offset + 4)
 
 			offset = offset + 4
