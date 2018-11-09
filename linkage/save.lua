@@ -44,6 +44,7 @@ local M = {}
 
 local function GatherLabel (name, labels)
 	local label = common.GetLabel(name)
+	-- local label = env:GetLabel(name)
 
 	if label then
 		labels = labels or {}
@@ -58,11 +59,13 @@ function M.ResolveLinks_Save (level)
 	local list = level.links
 
 	if list then
-		local new, links, labels = {}, common.GetLinks()
+		local new, links, labels = {}, common.GetLinks() -- env:GetLinks()
 		local tag_db = links:GetTagDatabase()
 
 		for _, rep in ipairs(list) do
+		-- for _, id in ipairs(list) do
 			local entry = common.GetValuesFromRep(rep)
+			-- local entry = env:GetValuesFromIdentifier(id)
 
 			new[#new + 1] = "entry"
 			new[#new + 1] = entry.uid
@@ -70,13 +73,14 @@ function M.ResolveLinks_Save (level)
 			entry.uid = nil
 
 			for _, sub in tag_db:Sublinks(links:GetTag(rep), "no_templates") do
+			-- for _, sub in ???:Sublinks(Type(id), "no_templates") do
 				new[#new + 1] = "sub"
 				new[#new + 1] = sub
 
 				labels = GatherLabel(sub, labels)
 
-				for link in links:Links(rep, sub) do
-					local obj, osub = link:GetOtherObject(rep)
+				for link in links:Links(rep, sub) do -- id
+					local obj, osub = link:GetOtherObject(rep) -- id
 
 					new[#new + 1] = list[obj]
 					new[#new + 1] = osub
@@ -103,15 +107,16 @@ function M.SaveGroupOfValues (level, what, mod, view)
 	end
 end
 
-local function HasAny (rep)
-	local links = common.GetLinks()
-	local tag = links:GetTag(rep)
+local function HasAny (rep) -- id
+	local links = common.GetLinks() -- env:GetLinks()
+	local tag = links:GetTag(rep) -- Type(id)
 
 	if tag then
 		local f, s, v0, reclaim = links:GetTagDatabase():Sublinks(tag, "no_templates")
 
 		for _, sub in f, s, v0 do
 			if links:HasLinks(rep, sub) then
+			-- if links:HasLinks(id, sub) then
 				reclaim()
 
 				return true
@@ -127,14 +132,18 @@ function M.SaveValuesIntoEntry (level, mod, values, entry)
 	-- Does this values blob have any links? If so, make note of it in the blob itself and
 	-- add some tracking information in the links list.
 	local rep = common.GetRepFromValues(values)
+	-- local id = env:GetIdentifierFromValues(values)
 
 	if HasAny(rep) then
+	-- if HasAny(id) then
 		local list = level.links or {}
 
 		if not list[rep] then
+		-- if not list[id] then
 			values.uid = strings.NewName()
 
 			list[#list + 1] = rep
+			-- list[#list + 1] = id
 			list[rep] = #list
 		end
 
@@ -147,10 +156,12 @@ function M.SaveValuesIntoEntry (level, mod, values, entry)
 	end
 
 	linkage_utils.EditorEvent(mod, "save", level, entry, values)
+	-- entry:SendMessage(...)
 
 	linkage_utils.AssignDefs(entry)
 
 	entry.positions, entry.instances = common.GetPositions(rep), common.GetInstances(rep, "copy")
+	-- entry.positions, entry.instances = env:GetPositions(id), env:GetGeneratedNames(id, "copy")
 
 	return entry
 end

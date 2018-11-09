@@ -50,6 +50,11 @@ function M.BuildEntry (level, mod, entry, acc)
 		mod.EditorEvent(entry.type, "build_instances", built, {
 			instances = instances, labels = level.labels, links = common.GetLinks()
 		})
+	--[[
+		entry:SendMessage("build_generated_names", built, {
+			generated_names = entry.generated_names, labels = level.labels, links = env.links
+		})
+	]]
 	end
 
 	built.positions = nil
@@ -58,7 +63,9 @@ function M.BuildEntry (level, mod, entry, acc)
 		level.links[entry.uid], built.uid = built
 
 		local prep_link, cleanup = mod.EditorEvent(entry.type, "prep_link", level, built)
-
+--[[
+	entry:SendMessage("prep_link", level, built)
+]]
 		level.links[built] = prep_link
 
 		if cleanup then
@@ -70,7 +77,9 @@ function M.BuildEntry (level, mod, entry, acc)
 	built.name = nil
 
 	mod.EditorEvent(entry.type, "build", level, entry, built)
-
+--[[
+	entry:SendMessage("fix_built_data", level, entry, built)
+]]
 	acc[#acc + 1] = built
 
 	return acc

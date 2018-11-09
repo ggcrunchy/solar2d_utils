@@ -69,38 +69,47 @@ function M.LoadValuesFromEntry (level, mod, values, entry)
 	-- If the entry will be involved in links, stash its rep so that it gets picked up (as
 	-- "entry") by ReadLinks() during resolution.
 	local rep = common.GetRepFromValues(values)
+	-- local id = env:GetIdentitfierFromValues(values)
 
 	if entry.uid then
 		level.links[entry.uid] = rep
 	end
 
 	--
-	local links, labels, resolved = common.GetLinks()
+	local links, labels, resolved = common.GetLinks() -- env:GetLinks()
 	local tag_db, tag = links:GetTagDatabase(), links:GetTag(rep)
 
 	for i = 1, #(entry.instances or "") do
+	-- for i = 1, #(entry.generated_names or "") do
 		local name = entry.instances[i]
+		-- local name = entry.generated_names[i]
 
 		labels, resolved = labels or level.labels, resolved or {}
 		resolved[name] = tag_db:ReplaceSingleInstance(tag, name)
+		-- resolved[name] = ???:ReplaceSingleGeneratedName(name)
 
 		common.AddInstance(rep, resolved[name])
+		-- env:AddGeneratedName(id, resolved[name])
 		common.SetLabel(resolved[name], labels and labels[name])
+		-- env:SetLabel(...)
 	end
 
 	-- Restore any positions.
 	common.SetPositions(rep, entry.positions)
+	-- env:SetPositions(id, entry.positions)
 
 	entry.positions = nil
 
 	-- Copy the editor state into the values, alert any listeners, and add defaults as necessary.
 	entry.instances = nil
+	-- env.generated_names = nil
 
 	for k, v in pairs(entry) do
 		values[k] = v
 	end
 
 	linkage_utils.EditorEvent(mod, "load", level, entry, values)
+	-- entry:SendMessage(...)
 
 	linkage_utils.AssignDefs(values)
 end
