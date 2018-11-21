@@ -26,6 +26,7 @@
 -- Standard library imports --
 local assert = assert
 local getmetatable = getmetatable
+local min = math.min
 local rawequal = rawequal
 local remove = table.remove
 local setmetatable = setmetatable
@@ -45,6 +46,29 @@ local M = {}
 --
 --
 --
+
+local NamedParams = {}
+
+--- DOCME
+-- @param what
+-- @array names
+-- @bool copy
+function M.AssignMessageParameterNames (what, names, copy)
+    assert(not NamedParams[what], "Message type's parameters have already been named")
+    assert(type(names) == "table", "Expected array of names")
+
+    if copy then
+        local out = {}
+
+        for i = 1, #names do
+            out[i] = names[i]
+        end
+
+        names = out
+    end
+
+    NamedParams[what] = names
+end
 
 local Entity = {}
 
@@ -120,6 +144,48 @@ local function IsDisplayObject (object)
     end
 end
 
+local function BeginMessage (entity, event)
+    event.target = entity
+end
+
+local function DoMessage (entity, event, what)
+    if IsDisplayObject(entity) then
+        entity:dispatchEvent(event)
+    elseif type(entity) == "table" then -- TODO: or userdata with __index
+        local handler = entity[what]
+
+        if handler then
+            handler(event)
+        end
+    end
+end
+
+local function EndMessage (event)
+    local result = event.result
+
+    event.result, event.target = nil -- clean up in case collectible
+
+    return result
+end
+
+--- DOCME
+-- @ptable event
+-- @return R
+function Entity:SendEvent (event)
+    assert(type(event) == "table", "Non-table event")
+
+    local name = event.name
+
+    assert(name ~= nil, "Missing event name")
+
+    event.result = nil -- might never be assigned, so ensure absence
+
+    BeginMessage(self, event)
+    DoMessage(self, event, name)
+
+    return EndMessage(event)
+end
+
 --- DOCME
 -- @param what
 -- @param ...
@@ -127,29 +193,35 @@ end
 function Entity:SendMessage (what, ...)
     local event = remove(EventCache) or { args = {} }
 
-    event.n, event.name, event.result = collect.CollectArgsInto(event.args, ...), what
+    event.n, event.name = collect.CollectArgsInto(event.args, ...), what
 
-    local args, n = event.args, event.n -- n.b. saved in case modified
+    local args, n = event.args, event.n -- n.b. saved in case removed (cf. what follows) or stomped on
+    local pnames, nparams = NamedParams[what], 0
 
-    if IsDisplayObject(self) then
-        self:dispatchEvent(event)
-    elseif type(self) == "table" then -- TODO: or userdata with __index
-        local handler = self[what]
+    if pnames then
+        nparams = min(n, #pnames)
 
-        if handler then
-            handler(self, event)
+        for i = 1, nparams do
+            event[pnames[i]] = args[i]
         end
+
+        event.args, event.n = nil -- not relevant due to named parameters
+    end
+
+    BeginMessage(self, event)
+    DoMessage(self, event, what)
+
+    for i = nparams, 1, -1 do
+        event[pnames[i]] = nil
     end
 
     for i = n, 1, -1 do
-        args[i] = nil
+        args[i] = nil -- clean up in case collectible
     end
 
-    event.args = args
+    EventCache[#EventCache + 1], event.args = event, args
 
-    EventCache[#EventCache + 1] = event
-
-    return event.result
+    return EndMessage(event)
 end
 
 --- DOCME
@@ -192,16 +264,36 @@ local Redirects = meta.Weak("k")
 
 --- DOCME
 -- @param object
--- @callable redirect
+-- @tparam ?|callable|nil redirect
 function M.Redirect (object, redirect)
     assert(not Redirects[object], "Already redirected")
 
     Redirects[object] = redirect
 end
 
---- DOCME
--- @treturn function F
--- @return N 
+--- Convenience routine to redirect closures to objects, e.g. some sort of "self".
+--
+-- As an example:
+--
+-- `local GetObject, Nonce = entity.SelfRedirecter()`
+-- 
+-- `-- other code`
+--
+-- `local object = MakeObject()`
+--
+-- `local function UseObject (arg1, arg2)`
+-- `  if rawequal(arg1, Nonce) then -- get self?`
+-- `    return object`
+-- `  else`
+-- `    -- normal usage`
+-- `  end`
+-- `end`
+--
+-- `entity.Redirect(UseObject, GetObject)`
+-- `entity.SendMessageTo(UseObject, "MyMessage")`
+-- @treturn function Called as `result = redirect(func)`; _result_ will be `func(nonce)`.
+-- @return Nonce sent as a special argument to request "self".
+-- @see Redirect, SendEventTo, SendMessageTo
 function M.SelfRedirecter ()
     local nonce = {}
 
@@ -212,9 +304,25 @@ end
 
 --- DOCME
 -- @param object
+-- @ptable event
+-- @return X
+-- @see SendEventTo
+function M.SendEventTo (object, event)
+    local redirect = Redirects[object]
+
+    if redirect then
+        object = redirect(object)
+    end
+
+    return Entity.SendEvent(object, event)
+end
+
+--- DOCME
+-- @param object
 -- @param what
 -- @param ...
 -- @return X
+-- @see SendEventTo
 function M.SendMessageTo (object, what, ...)
     local redirect = Redirects[object]
 
