@@ -59,13 +59,13 @@ function M.ResolveLinks_Save (level)
 	local list = level.links
 
 	if list then
-		local new, links, labels = {}, common.GetLinks() -- env:GetLinks()
+		local new, links, labels = {}, common.GetLinks() -- linker:GetLinks()
 		local tag_db = links:GetTagDatabase()
 
 		for _, rep in ipairs(list) do
 		-- for _, id in ipairs(list) do
 			local entry = common.GetValuesFromRep(rep)
-			-- local entry = env:GetValuesFromIdentifier(id)
+			-- local entry = linker:GetValuesFromIdentifier(id)
 
 			new[#new + 1] = "entry"
 			new[#new + 1] = entry.uid
@@ -73,17 +73,17 @@ function M.ResolveLinks_Save (level)
 			entry.uid = nil
 
 			for _, sub in tag_db:Sublinks(links:GetTag(rep), "no_templates") do
-			-- for _, sub in ???:Sublinks(Type(id), "no_templates") do
-				new[#new + 1] = "sub"
-				new[#new + 1] = sub
+			-- for name in NODE_PATTERN(id):NonTemplateNodes() do
+				new[#new + 1] = "sub" -- "name"
+				new[#new + 1] = sub -- name
 
 				labels = GatherLabel(sub, labels)
 
 				for link in links:Links(rep, sub) do -- id
-					local obj, osub = link:GetOtherObject(rep) -- id
+					local obj, osub = link:GetOtherObject(rep) -- id / oid, oname = GetOtherItem()
 
-					new[#new + 1] = list[obj]
-					new[#new + 1] = osub
+					new[#new + 1] = list[obj] -- list[oid], see notes below (could use values?)
+					new[#new + 1] = osub -- oname
 
 					labels = GatherLabel(sub, labels)
 				end
@@ -138,13 +138,13 @@ function M.SaveValuesIntoEntry (level, mod, values, entry)
 	-- if HasAny(id) then
 		local list = level.links or {}
 
-		if not list[rep] then
+		if not list[rep] then -- see note below
 		-- if not list[id] then
 			values.uid = strings.NewName()
 
 			list[#list + 1] = rep
 			-- list[#list + 1] = id
-			list[rep] = #list
+			list[rep] = #list -- TODO: as id, might mix with list... maybe negate or stringify?
 		end
 
 		level.links = list
