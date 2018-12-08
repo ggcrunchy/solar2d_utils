@@ -293,7 +293,7 @@ end
 -- `entity.SendMessageTo(UseObject, "MyMessage")`
 -- @treturn function Called as `result = redirect(func)`; _result_ will be `func(nonce)`.
 -- @return Nonce sent as a special argument to request "self".
--- @see Redirect, SendEventTo, SendMessageTo
+-- @see Redirect, SendComponentQueryTo, SendEventTo, SendMessageTo
 function M.SelfRedirecter ()
     local nonce = {}
 
@@ -304,9 +304,35 @@ end
 
 --- DOCME
 -- @param object
+-- @param what
+-- @param ...
+-- @return X
+-- @see SendEventTo, SendMessageTo
+function M.SendComponentQueryTo (object, what, ...)
+    local redirect = Redirects[object]
+
+    if redirect then
+        object = redirect(object)
+    end
+
+	if what == "get_component_list" then
+		return component.GetListForObject(object)
+	elseif what == "get_interface_list" then
+		return component.GetInterfacesForObject(object)
+	elseif what == "has_component" then
+		return component.FoundInObject(object, ...)
+	elseif what == "implements" then
+		return component.ImplementedByObject(object, ...)
+	else
+		return nil
+	end
+end
+
+--- DOCME
+-- @param object
 -- @ptable event
 -- @return X
--- @see SendEventTo
+-- @see SendComponentQueryTo, SendEventTo
 function M.SendEventTo (object, event)
     local redirect = Redirects[object]
 
@@ -322,7 +348,7 @@ end
 -- @param what
 -- @param ...
 -- @return X
--- @see SendEventTo
+-- @see SendComponentQueryTo, SendEventTo
 function M.SendMessageTo (object, what, ...)
     local redirect = Redirects[object]
 
