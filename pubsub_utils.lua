@@ -307,14 +307,6 @@ end
 
 			return false, why or "", not not is_cont
 		end
--- ^^ sort of used elsewhere
---- DOCME
-function Type:GetTemplate (name)
-	local pi, nodes = name:find("|"), self.m_nodes
-	local template = (pi and nodes) and name:sub(1, pi - 1) .. "*"
-
-	return nodes[template] and template
-end
 
 		--- Predicate.
 		-- @param name
