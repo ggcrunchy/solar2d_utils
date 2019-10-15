@@ -37,22 +37,9 @@ local _SetListenFunc_
 -- Exports --
 local M = {}
 
--- Aliases used to report "coming from" scene --
-local Aliases = {}
-
---- Utility.
--- @string alias Alias to associate with the current scene, cf. @{ComingFrom}.
-function M.Alias (alias)
-	Aliases[composer.getSceneName("current")] = alias
-end
-
---- Getter.
--- @treturn string Name of previous scene; if an alias exists, cf. @{Alias}, it is used.
-function M.ComingFrom ()
-	local prev = composer.getSceneName("previous")
-
-	return Aliases[prev] or prev
-end
+--
+--
+--
 
 -- Arguments to composer.gotoScene --
 local Args = {}

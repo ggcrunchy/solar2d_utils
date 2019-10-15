@@ -32,10 +32,10 @@ local adaptive = require("tektite_core.table.adaptive")
 local args = require("iterator_ops.args")
 local frames = require("corona_utils.frames")
 local powers_of_2 = require("bitwise_ops.powers_of_2")
-local timers = require("corona_utils.timers")
 
 -- Corona globals --
 local display = display
+local timer = timer
 
 -- Corona modules --
 local physics = require("physics")
@@ -47,12 +47,16 @@ local _SetVisibility_
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 --- Activate or deactivate of a physics object, via a 0-lapse timer.
 -- @pobject object Physics object.
 -- @bool active Activate? Otherwise, deactivate.
 -- @return (0-lapse) timer handle.
 function M.Activate (object, active)
-	return timers.Defer(function()
+	return timer.performWithDelay(0, function()
 		object.isBodyActive = active
 	end)
 end
@@ -476,9 +480,7 @@ for k, v in pairs{
 	Runtime:addEventListener(k, v)
 end
 
--- Cache module members.
 _Implements_Pred_ = M.Implements_Pred
 _SetVisibility_ = M.SetVisibility
 
--- Export the module.
 return M

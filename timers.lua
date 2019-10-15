@@ -1,4 +1,6 @@
 --- Some useful timer utilities.
+--
+-- A **TimerHandle** refers to the result of a **timer.performWithDelay**.
 
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -24,79 +26,92 @@
 --
 
 -- Standard library imports --
-local assert = assert
 local create = coroutine.create
 local error = error
-local max = math.max
+local rawequal = rawequal
 local resume = coroutine.resume
+local status = coroutine.status
 local yield = coroutine.yield
 
--- Modules --
-local errors = require("tektite_core.errors")
+-- Cookies --
+local _get_func = {}
 
 -- Corona globals --
 local display = display
 local system = system
 local timer = timer
 
+-- Cached module references --
+local _Wrap_
+
 -- Exports --
 local M = {}
 
---- Defers a function with a 0-frame delay. This is for doing something as soon as possible,
--- but where it may not be possible immediately, e.g. in the middle of a callback.
--- @callable func Function, as per **timer.performWithDelay**.
--- @treturn TimerHandle Handle to a timer, as per **timer.performWithDelay**.
-function M.Defer (func)
-	return timer.performWithDelay(0, func)
+--
+--
+--
+
+--- 
+-- @tparam TimerHandle handle
+-- @treturn boolean The timer has expired?
+function M.HasExpired (handle)
+	return handle._expired == true -- q.v. timer library source
 end
 
--- Built-in defer functions --
+--- 
+-- @tparam TimerHandle handle
+-- @treturn boolean The timer is still active, but paused?
+function M.IsPaused (handle)
+	return not handle._expired and handle._pauseTime ~= nil -- q.v. timer library source
+end
+
+--- Spawn a new timer, reusing another timer's listener.
+--
+-- **N.B.** Since both timers will refer to the same listener, any upvalues and other associated
+-- state belonging to said listener are also shared.
+-- @uint delay As per **timer.performWithDelay**.
+-- @tparam TimerHandle handle Timer to emulate.
+-- @int[opt] iterations As per **timer.performWithDelay**. Ignored if _handle_ came from @{Wrap}.
+-- @treturn TimerHandle Handle.
+function M.PerformWithDelayFromExample (delay, handle, iterations)
+	local listener = handle._listener -- q.v. timer library source
+
+	if handle._wrapped then
+		return _Wrap_(delay, listener(_get_func))
+	else
+		return timer.performWithDelay(delay, listener, iterations)
+	end
+end
+
 local DeferFuncs = {
-	activate = function(event)
-		event.m_object.isBodyActive = true
+	activate = function(object)
+		object.isBodyActive = true
 	end,
 
-	deactivate = function(event)
-		event.m_object.isBodyActive = false
+	deactivate = function(object)
+		object.isBodyActive = false
 	end,
 
-	remove = function(event)
-		event.m_object:removeSelf()
+	remove = function(object)
+		object:removeSelf()
 	end,
 
-	stop = function(event)
-		event.m_object:setLinearVelocity(0, 0)
+	stop = function(object)
+		object:setLinearVelocity(0, 0)
 	end,
 
-	stop_and_deactivate = function(event)
-		event.m_object.isBodyActive = false
+	stop_and_deactivate = function(object)
+		object.isBodyActive = false
 
-		event.m_object:setLinearVelocity(0, 0)
+		object:setLinearVelocity(0, 0)
 	end
 }
 
---- DOCME
-function M.AddDeferFunc (name, func, extends)
-	assert(not DeferFuncs[name], "Name already taken")
-	assert(func ~= nil, "Invalid function")
-	assert(extends == nil or DeferFuncs[extends], "Nothing to extend")
-
-	if extends == nil then
-		DeferFuncs[name] = func
-	else
-		local base = DeferFuncs[extends]
-
-		DeferFuncs[name] = function(event)
-			base(event)
-			func(event)
-		end
-	end
-end
-
---- Variant of @{Defer} that conditionally fires.
--- @callable func Function as per **timer.performWithDelay**.
+--- Perform an action on an object with a 0-frame delay, i.e. soon but not immediately.
 --
--- The **m_object** member of _event_ will contain _object_.
+-- The motivation is that _object_ and / or some associated state might still be in use, for
+-- instance until a callback finishes, yet that point in the code is convenient / natural.
+-- @callable func Called as `func(object, event)` after the delay, with _event_ as per **timer.performWithDelay**.
 --
 -- Alternatively, a string corresponding to a built-in behavior:
 --
@@ -105,108 +120,54 @@ end
 -- * **"remove"**: `object:removeSelf()`.
 -- * **"stop"**: `object:setLinearVelocity(0, 0)`.
 -- * **"stop\_and\_deactivate"**: Combination of **"stop"** and **"deactivate"**.
--- @pobject object A sentinel object. If **removeSelf** has been called on _object_ before
+-- @pobject object Acted-on object. If **removeSelf** has been called on _object_ before
 -- the timer goes off, _func_ will never be called.
--- @treturn TimerHandle See above.
-function M.DeferIf (func, object)
+-- @treturn TimerHandle Handle.
+function M.WithObjectDefer (object, func)
 	func = DeferFuncs[func] or func
 
 	return timer.performWithDelay(0, function(event)
 		if display.isValid(object) then
-			event.m_object = object
-
-			func(event)
+			func(object, event)
 		end
 	end)
 end
 
---- Kicks off a timer with infinite repetitions.
--- @callable func Function as per **timer.performWithDelay**.
--- @int delay Delay, ditto. By default, 1.
--- @treturn TimerHandle See above.
-function M.Repeat (func, delay)
-	delay = max(delay or 1, 1)
+local function DefError (err, _) error(err) end
 
-	return timer.performWithDelay(delay, func, 0)
-end
-
---- Variant of @{Repeat} that adds some behavior.
--- @callable func Function as per **timer.performWithDelay**.
+--- Kick off a coroutine-based timer, allowing _func_ to proceed using @{coroutine.yield}.
 --
--- If the first return value is **"cancel"**, the timer will cancel itself.
---
--- If the return value is **"pause"**, the timer will pause itself.
---
--- The **m_elapsed** member of _event_ will contain the time since the timer was launched.
--- @int delay See above.
--- @treturn TimerHandle See above.
-function M.RepeatEx (func, delay)
-	local now = system.getTimer()
-
-	return M.Repeat(function(event)
-		event.m_elapsed = event.time - now
-
-		local result = func(event)
-
-		if result == "cancel" then
-			timer.cancel(event.source)
-		elseif result == "pause" then
-			timer.pause(event.source)
-		end
-	end, delay)
-end
-
--- Wrapper to keep coroutine events in sync with timer
-local function Wrap (func)
+-- The timer will cancel itself after _func_ completes or an error occurs.
+-- @uint delay As per **timer.performWithDelay**.
+-- @callable func Timer body, ditto.
+-- @callable[opt] err_func On error, called as `err_func(err, coro)`, where _err_ was the error object
+-- and _coro_ the offending coroutine. This allows, say, calling `debug.traceback(coro, err)` to gather
+-- more debugging information. The default behavior is `error(err)`.
+-- @treturn TimerHandle Handle.
+function M.Wrap (delay, func, err_func)
 	local coro, et = create(func)
-	local now = system.getTimer()
-
-	return function(event)
-		et = et or event
-
-		et.count = event.count
-		et.time = event.time
-
-		et.m_elapsed = event.time - now
-
-		local ok, res = resume(coro, event)
-
-		if ok then
-			return res
+	local handle = timer.performWithDelay(delay, function(event)
+		if rawequal(event, _get_func) then
+			return func -- cf. PerformWithDelayFromExample
 		else
-			errors.StoreTraceback(coro, res, 2)
+			et = et or event -- n.b. relies on leaky abstraction, i.e. new event per timer per frame
+			et.count, et.time = event.count, event.time
 
-			res = errors.GetLastTraceback(true)
+			local ok, err = resume(coro, event)
 
-			error(res, 3)
+			if status(coro) == "dead" then -- errored out or complete?
+				timer.cancel(event.source)
+
+				if not ok then -- errored out
+					(err_func or DefError)(err, coro)
+				end
+			end
 		end
-	end
-end
+	end, 0)
 
---- Kicks off a coroutine-based timer with infinite repetitions.
--- @callable func Function as per **timer.performWithDelay**. This function will be wrapped
--- in a coroutine, and you may use @{coroutine.yield} to yield an iteration.
---
--- The **m_elapsed** member of _event_ follows @{RepeatEx}.
--- @int delay See above.
--- @treturn TimerHandle See above.
-function M.Wrap (func, delay)
-	return M.Repeat(Wrap(func), delay)
-end
+	handle._wrapped = true
 
---- Variant of @{Wrap} that adds @{RepeatEx}'s functionality.
--- @callable func As per @{Wrap}, but yields in this function are treated like returns from
--- @{RepeatEx}'s _func_.
---
--- The timer will cancel itself after _func_ completes.
--- @int delay See above.
--- @treturn TimerHandle See above.
-function M.WrapEx (func, delay)
-	return M.RepeatEx(Wrap(function(event)
-		func(event)
-
-		return "cancel"
-	end), delay)
+	return handle
 end
 
 --- DOCME
@@ -241,5 +202,6 @@ function M.YieldOnTimeout (timeout)
 	end
 end
 
--- Export the module.
+_Wrap_ = M.Wrap
+
 return M
