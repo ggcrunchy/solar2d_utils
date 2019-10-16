@@ -170,10 +170,8 @@ function M.NewTriangleStream (n)
 	--
 end
 
--- Cache module members.
 _AddQuadIndices_ = M.AddQuadIndices
 _AddTriangleIndices_ = M.AddTriangleIndices
 _AddVertex_ = M.AddVertex
 
--- Export the module.
 return M

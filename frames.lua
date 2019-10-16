@@ -37,6 +37,10 @@ local _InvalidateID_
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 -- Unique frame ID (lazily evaluated) --
 local FrameID = 0
 
@@ -156,9 +160,7 @@ Runtime:addEventListener("system", function(event)
 	end
 end)
 
--- Cache module members.
 _GetFrameID_ = M.GetFrameID
 _InvalidateID_ = M.InvalidateID
 
--- Export the module.
 return M

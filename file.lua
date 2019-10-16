@@ -51,6 +51,10 @@ local _Prefix_FromTable_
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 -- Is this running on the simulator? --
 local OnSimulator = system.getInfo("environment") == "simulator"
 
@@ -448,10 +452,8 @@ function M.WatchForFileModification (path, func, opts)
 	end
 end
 
--- Cache module members.
 _EnumerateFiles_ = M.EnumerateFiles
 _Exists_ = M.Exists
 _Prefix_FromTable_ = M.Prefix_FromTable
 
--- Export the module.
 return M

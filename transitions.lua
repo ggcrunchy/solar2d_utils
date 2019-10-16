@@ -247,8 +247,6 @@ do
 	end
 end
 
--- Cache module members.
 _GetState_ = M.GetState
 
--- Export the module.
 return M

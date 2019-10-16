@@ -38,6 +38,10 @@ local graphics = graphics
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 --- DOCME
 -- @pobject image
 -- @treturn uint A
@@ -269,15 +273,10 @@ function M.TileImage (name, ncols, nrows, x1, y1, x2, y2)
 	return graphics.newImageSheet(name, { frames = frames })
 end
 
--- Leave Level response
-local function LeaveLevel ()
+Runtime:addEventListener("leave_level", function()
 	for _, factory in ipairs(Factories) do
 		factory.m_isheet = nil
 	end
-end
+end)
 
--- Listen to events.
-Runtime:addEventListener("leave_level", LeaveLevel)
-
--- Export the module.
 return M

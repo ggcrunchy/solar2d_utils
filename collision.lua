@@ -422,7 +422,6 @@ local function AuxCollision (phase, o1, o2, contact)
 	end
 end
 
--- Listen to events.
 for k, v in pairs{
 	-- Collision --
 	collision = function(event)

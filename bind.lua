@@ -56,6 +56,10 @@ local _Subscribe_
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 -- Builds a composite ID out of a target's ID and sublink
 local function ComposeId (id, sub)
 	return format("%i:%s", id, sub)
@@ -583,12 +587,10 @@ function M.Subscribe (name, id, func, arg)
 	end
 end
 
--- Cache module members.
 _AddId_ = M.AddId
 _BroadcastBuilder_ = M.BroadcastBuilder
 _IterEvents_ = M.IterEvents
 _Reset_ = M.Reset
 _Subscribe_ = M.Subscribe
 
--- Export the module.
 return M

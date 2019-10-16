@@ -147,10 +147,8 @@ function M.WantsToGoBack ()
 	_Send_("message:wants_to_go_back")
 end
 
--- Cache module members.
 _GoToScene_ = M.GoToScene
 _Send_ = M.Send
 _SetListenFunc_ = M.SetListenFunc
 
--- Export the module.
 return M

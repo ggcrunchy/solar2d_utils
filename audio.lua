@@ -49,6 +49,10 @@ local timer = timer
 -- Exports --
 local M = {}
 
+--
+--
+--
+
 -- --
 local IsQuiet
 
@@ -573,7 +577,6 @@ local function LeaveLevel ()
 	ClearDeferredItems()
 end
 
--- Listen to events.
 for k, v in pairs{
 	-- Leave Level --
 	leave_level = LeaveLevel,
@@ -598,5 +601,4 @@ for k, v in pairs{
 	Runtime:addEventListener(k, v)
 end
 
--- Export the module.
 return M
