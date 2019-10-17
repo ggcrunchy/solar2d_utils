@@ -143,15 +143,12 @@ function M.OnFirstCallInFrame (func)
 	end
 end
 
--- "enterFrame" listener --
 Runtime:addEventListener("enterFrame", function(event)
 	local now = event.time
 
-	-- Update the time difference.
 	Diff, Last = Last and (now - Last) / 1000 or 0, now
 end)
 
--- "system" listener --
 Runtime:addEventListener("system", function(event)
 	if event.type == "applicationStart" or event.type == "applicationResume" then
 --		Last, Diff = system.getTimer(), 0

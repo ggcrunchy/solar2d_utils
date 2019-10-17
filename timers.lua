@@ -38,7 +38,6 @@ local _get_func = {}
 
 -- Corona globals --
 local display = display
-local system = system
 local timer = timer
 
 -- Cached module references --
@@ -189,10 +188,10 @@ end
 function M.YieldOnTimeout (timeout)
 	local since
 
-	return function(what)
-		local now = system.getTimer()
+	return function(event, how)
+		local now = event.time
 
-		if what == "begin" or not since then
+		if how == "begin" or not since then
 			since = now
 		elseif now - since > timeout then
 			since = now
