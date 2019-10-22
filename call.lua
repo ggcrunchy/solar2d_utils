@@ -38,6 +38,8 @@ local Runtime = Runtime
 local system = system
 
 -- Cached module references --
+local _DispatchOrHandleEvent_
+local _GetRedirectTarget_
 local _IterateCallList_
 local _MakePerObjectCallList_
 
@@ -73,6 +75,94 @@ function M.AtLimit ()
 	return Count == Limit
 end
 
+
+
+--- DOCME
+function M.DispatchOrHandleEvent (object, event, def)
+	local target, result = _GetRedirectTarget_(object)
+
+	if target ~= nil then
+		object = target
+	end
+
+	if type(object) == "table" then
+		event.result, event.target = def, object
+
+		local dispatch_event = object.dispatchEvent
+
+		if dispatch_event then
+			dispatch_event(target, event)
+		else
+			local handler = object[event.name]
+
+			if handler then
+				handler(event)
+			end
+		end
+
+		result, event.result, event.target = event.result
+	end
+
+	return result
+end
+
+local CallEvent = {}
+
+--- DOCME
+function M.DispatchOrHandleNamedEvent (name, object, def)
+	CallEvent.name = name
+
+	return _DispatchOrHandleEvent_(object, CallEvent, def)
+end
+
+--- DOCME
+function M.DispatchOrHandleNamedEvent_NamedArg (name, object, arg_name, arg, def)
+	CallEvent.name, CallEvent[arg_name] = name, arg
+
+	local result = _DispatchOrHandleEvent_(object, CallEvent, def)
+
+	CallEvent[arg_name] = nil
+
+	return result
+end
+
+--- DOCME
+function M.DispatchOrHandleNamedEvent_NamedArgPair (name, object, arg_name1, arg1, arg_name2, arg2, def)
+	CallEvent.name, CallEvent[arg_name1], CallEvent[arg_name2] = name, arg1, arg2
+
+	local result = _DispatchOrHandleEvent_(object, CallEvent, def)
+
+	CallEvent[arg_name1], CallEvent[arg_name2] = nil
+
+	return result
+end
+
+local Redirects = meta.WeakKeyed()
+
+--- DOCME
+function M.GetRedirectTarget (func)
+	return Redirects[func]
+end
+
+local BoxNonce = Redirects -- use arbitrary internal object as nonce
+
+-- List iterator body
+local function AuxList (list, index)
+	if not index then
+		if list and (not Limit or Count < Limit) then
+			return 0, list(BoxNonce, "get")
+		end
+	elseif index > 0 then
+		return index - 1, list("i", index)
+	end
+end
+
+--- DOCME
+-- @treturn iterator X
+function M.IterateCallList (list)
+	return AuxList, list, list and list("n")
+end
+
 local Tally, LastReported, OnTooManyEvent = 0, 0
 
 local function TryToReport ()
@@ -99,8 +189,6 @@ local function AdjustN (n)
 end
 
 local BoxesStash = {}
-
-local BoxNonce = BoxesStash -- arbitrary internal object
 
 local function Box (func)
 	local box = remove(BoxesStash)
@@ -136,7 +224,7 @@ end
 -- @treturn function A
 -- @treturn table T
 function M.MakePerObjectCallList ()
-	local object_to_list, list = meta.Weak("k")
+	local object_to_list, list = meta.WeakKeyed()
 
 	return function(func, object)
 		local curf = object_to_list[object]
@@ -212,40 +300,11 @@ function M.NewDispatcher ()
 	return dispatcher
 end
 
-local Commands = meta.Weak("k")
-
 --- DOCME
--- n.b. see note for SetActionCommands
-function M.GetActionCommands (action)
-	return Commands[action]
-end
+function M.Redirect (func, target)
+	assert(not Redirects[func], "Function already redirected")
 
--- List iterator body
-local function AuxList (list, index)
-	if not index then
-		if list and (not Limit or Count < Limit) then
-			return 0, list(BoxNonce, "get")
-		end
-	elseif index > 0 then
-		return index - 1, list("i", index)
-	end
-end
-
---- DOCME
--- @treturn iterator X
-function M.IterateCallList (list)
-	return AuxList, list, list and list("n")
-end
-
---- DOCME
--- n.b. this is just meant to share some logic between modules
--- however, once entities and / or components become pervasive it
--- will basically be obsolete
-function M.SetActionCommands (action, cmds)
-	assert(type(action) == "function", "Non-function action")
-	assert(cmds == nil or type(cmds) == "function", "Non-function commands")
-
-	Commands[action] = cmds
+	Redirects[func] = target
 end
 
 --- DOCME
@@ -256,6 +315,8 @@ function M.SetActionLimit (limit)
 	Limit = limit
 end
 
+_DispatchOrHandleEvent_ = M.DispatchOrHandleEvent
+_GetRedirectTarget_ = M.GetRedirectTarget
 _IterateCallList_ = M.IterateCallList
 _MakePerObjectCallList_ = M.MakePerObjectCallList
 

@@ -187,7 +187,7 @@ end
 -- _object_ passed alongside it as _arg_.
 -- @treturn table Weak table associating objects to broadcasters.
 function M.BroadcastBuilder ()
-	local object_to_broadcaster, list = meta.Weak("k")
+	local object_to_broadcaster, list = meta.WeakKeyed()
 
 	return function(func, object)
 		-- If events already exist, add this event to the list. If this
@@ -278,14 +278,6 @@ function M.BroadcastBuilder_Helper (name)
 	setmetatable(broadcast_helper, broadcast_helper)
 
 	return broadcast_helper
-end
-
--- --
-local Commands = meta.Weak("k")
-
---- DOCME
-function M.GetActionCommands (action)
-	return Commands[action]
 end
 
 -- Event iterator body
@@ -544,14 +536,6 @@ function M.Resolve (name)
 	end
 
 	_Reset_(name)
-end
-
---- DOCME
-function M.SetActionCommands (action, cmds)
-	assert(type(action) == "function", "Non-function action")
-	assert(cmds == nil or type(cmds) == "function", "Non-function commands")
-
-	Commands[action] = cmds
 end
 
 --- DOCME

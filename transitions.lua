@@ -49,7 +49,7 @@ local M = {}
 --
 
 -- Current state of transition handle, if any --
-local HandleState = meta.Weak("k")
+local HandleState = meta.WeakKeyed()
 
 -- Helper to report to flow operation when a transition has completed
 local function DoingTransition (handle)
