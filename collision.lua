@@ -35,6 +35,7 @@ local powers_of_2 = require("bitwise_ops.powers_of_2")
 
 -- Corona globals --
 local display = display
+local Runtime = Runtime
 local timer = timer
 
 -- Corona modules --
@@ -459,7 +460,7 @@ for k, v in pairs{
 			end
 
 			-- Now that all checks have been done against it, update the collision frame ID.
-			FrameID = frames.GetFrameID()
+			FrameID = Runtime.getFrameID()
 		end
 	end,
 

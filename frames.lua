@@ -23,16 +23,8 @@
 -- [ MIT license: http://www.opensource.org/licenses/mit-license.php ]
 --
 
--- Standard library imports --
-local abs = math.abs
-
 -- Corona globals --
 local Runtime = Runtime
-local system = system
-
--- Cached module references --
-local _GetFrameID_
-local _InvalidateID_
 
 -- Exports --
 local M = {}
@@ -41,84 +33,16 @@ local M = {}
 --
 --
 
--- Unique frame ID (lazily evaluated) --
-local FrameID = 0
+local Diff
 
--- Frame difference; last frame time --
-local Diff, Last = 0, 0
+local UpdateTime
 
---- Getter.
+---
 -- @treturn number Difference in time since last frame.
 function M.DiffTime ()
+	UpdateTime()
+
 	return Diff
-end
-
---- Getter.
--- @treturn uint Current frame ID.
-function M.GetFrameID ()
-	if FrameID <= 0 then
-		FrameID = 1 - FrameID
-	end
-
-	return FrameID
-end
-
---- Getter.
--- @treturn number Time for this frame.
-function M.GetFrameTime ()
-	return Last
-end
-
--- Dispatcher used to drive "enterFrame" listeners once interception is up and running --
-local Events
-
---- Any future **"enterFrame"** listeners are added to / removed from an internal dispatcher.
--- Each frame the runtime's own event is propagated through this dispatcher, followed by
--- an @{InvalidateID}. (The purpose of intercepting events is to ensure this invalidation.)
---
--- Note that this modifies the **Runtime:addEventListener()** and **Runtime:removeEventListener()**
--- methods in order to reroute **"enterFrame"** messages. If the raw versions are needed, they
--- must be cached beforehand. Typically, this should be called before adding listeners to
--- avoid this need.
---
--- Subsequent calls are no-ops.
-function M.InterceptEnterFrameEvents ()
-	if not Events then
-		-- Add one final "enterFrame" listener to process subsequently added events.
-		Events = system.newEventDispatcher()
-
-		Runtime:addEventListener("enterFrame", function(event)
-			-- Run "enterFrame" events.
-			Events:dispatchEvent(event)
-
-			-- Do post-enterFrame logic.
-			_InvalidateID_()
-		end)
-
-		--
-		local AddEventListener, RemoveEventListener = Runtime.addEventListener, Runtime.removeEventListener
-
-		function Runtime:addEventListener (what, listener)
-			if what == "enterFrame" then
-				Events:addEventListener(what, listener)
-			else
-				AddEventListener(self, what, listener)
-			end
-		end
-
-		function Runtime:removeEventListener (what, listener)
-			if what == "enterFrame" then
-				Events:removeEventListener(what, listener)
-			else
-				RemoveEventListener(self, what, listener)
-			end
-		end
-	end
-end
-
---- Invalidate any ID from last frame.
-function M.InvalidateID ()
-	FrameID = -abs(FrameID)
 end
 
 --- Enforces that a function is only called once per frame, e.g. for lazy updates.
@@ -131,10 +55,11 @@ function M.OnFirstCallInFrame (func)
 	local id
 
 	return function(arg)
-		local is_first = id ~= _GetFrameID_()
+		local frame_id = Runtime.getFrameID()
+		local is_first = id ~= frame_id
 
 		if is_first then
-			id = FrameID
+			id = frame_id
 
 			func(arg)
 		end
@@ -143,21 +68,22 @@ function M.OnFirstCallInFrame (func)
 	end
 end
 
-Runtime:addEventListener("enterFrame", function(event)
-	local now = event.time
+local Last
+
+UpdateTime = M.OnFirstCallInFrame(function()
+	local now = Runtime.getFrameStartTime()
 
 	Diff, Last = Last and (now - Last) / 1000 or 0, now
 end)
 
+--[[
 Runtime:addEventListener("system", function(event)
 	if event.type == "applicationStart" or event.type == "applicationResume" then
---		Last, Diff = system.getTimer(), 0
+--		Diff, Last = 0
 	elseif event.type == "applicationExit" then
---		SG:Clear()
+--		
 	end
 end)
-
-_GetFrameID_ = M.GetFrameID
-_InvalidateID_ = M.InvalidateID
+]]
 
 return M
