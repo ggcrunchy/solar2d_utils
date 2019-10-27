@@ -215,6 +215,23 @@ local function TableName (wip)
 	return wip and "level_wips" or "levels"
 end
 
+---
+-- @string name Level name.
+-- @bool wip Is this a work-in-progress level?
+-- @treturn string If present, the level's data blob, cf. @{SaveLevel}; otherwise, **nil**.
+function M.GetLevelData (name, wip)
+	local what = TableName(wip)
+	local db, blob = OpenDB_Ex(what)
+
+	for name, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
+		blob = data
+	end
+
+	db:close()
+
+	return blob
+end
+
 --- Enumerate levels from the database.
 -- @bool wips Are these work-in-progress levels?
 -- @treturn array An array of tables of the form { **name** = _name_, **data** = _blob_ },
@@ -232,23 +249,6 @@ function M.GetLevels (wips)
 	db:close()
 
 	return levels
-end
-
---- Predicate.
--- @string name Level name.
--- @bool wip Is this a work-in-progress level?
--- @treturn boolean Is the level in the database?
--- @treturn string If present, the level's data blob, cf. @{SaveLevel}; otherwise, **nil**.
-function M.LevelExists (name, wip)
-	local what = TableName(wip)
-	local db, exists, blob = OpenDB_Ex(what), false
-
-	for name, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
-		exists, blob = true, data
-	end
-	-- ^^ TODO Use db module
-
-	return exists, blob
 end
 
 --- Removes a level from the database.
