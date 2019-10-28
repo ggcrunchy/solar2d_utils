@@ -223,7 +223,7 @@ function M.GetLevelData (name, wip)
 	local what = TableName(wip)
 	local db, blob = OpenDB_Ex(what)
 
-	for name, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
+	for _, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
 		blob = data
 	end
 
@@ -293,8 +293,6 @@ function M.Wipe ()
 		DROP TABLE IF EXISTS level_wips;
 	]]
 	db:close()
-	
-	system.deletePreferences("app", { "has_played_before", "completed" })
 
 	Loaded = {}
 end
