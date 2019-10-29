@@ -37,7 +37,7 @@ local system = system
 
 -- Corona modules --
 local json = require("json")
-local sqlite3 = require("sqlite3")
+--local sqlite3 = require("sqlite3")
 
 -- Exports --
 local M = {}
@@ -64,7 +64,7 @@ local Loaded = {}
 local function OpenDB (name)
 	local path = system.pathForFile(name .. ".sqlite3", pconfig.out_dir) 
 
-	return sqlite3.open(path)
+--	return sqlite3.open(path)
 end
 
 -- Opens a given database table, performing setup if necessary
@@ -72,6 +72,7 @@ local function OpenDB_Ex (what, file)
 	local db, info = OpenDB(file or "data"), Info[what]
 
 	if info and not Loaded[what] then
+--[=[
 		local setup = [[CREATE TABLE IF NOT EXISTS ]] .. what .. [[ (]] .. info.columns .. [[); BEGIN;]]
 
 		for _, item in ipairs(info) do
@@ -81,6 +82,7 @@ local function OpenDB_Ex (what, file)
 		db:exec(setup .. [[COMMIT;]])
 
 		Loaded[what] = true
+--]=]
 	end
 
 	return db
@@ -90,9 +92,10 @@ end
 local function Commit (what, changes)
 	if #changes > 0 then
 		local db = OpenDB_Ex(what)
-
+--[=[
 		db:execute(changes)
 		db:close()
+--]=]
 	end
 end
 
@@ -190,7 +193,7 @@ end
 -- @treturn table Current configuration data, as key-value pairs.
 function M.GetConfig ()
 	local db, config = OpenDB_Ex("config"), {}
-
+--[=[
 	for k, v in db:urows[[SELECT * FROM config]] do
 		if v == "true" or v == "false" then
 			config[k] = v == "true"
@@ -200,7 +203,7 @@ function M.GetConfig ()
 	end
 
 	db:close()
-
+--]=]
 	return config
 end
 
@@ -222,13 +225,13 @@ end
 function M.GetLevelData (name, wip)
 	local what = TableName(wip)
 	local db, blob = OpenDB_Ex(what)
-
+--[=[
 	for _, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_KEY = ']] .. name .. [[';]]) do
 		blob = data
 	end
 
 	db:close()
-
+--]=]
 	return blob
 end
 
@@ -241,13 +244,13 @@ end
 function M.GetLevels (wips)
 	local what = TableName(wips)
 	local db, levels = OpenDB_Ex(what), {}
-
+--[=[
 	for name, data in db:urows([[SELECT * FROM ]] .. what .. [[ WHERE m_OMIT <> 'true']]) do
 		levels[#levels + 1] = { name = name, data = data }
 	end
 
 	db:close()
-
+--]=]
 	return levels
 end
 
@@ -287,13 +290,13 @@ end
 --- Wipes the database.
 function M.Wipe ()
 	local db = OpenDB("data")
-
+--[=[
 	db:exec[[
 		DROP TABLE IF EXISTS levels;
 		DROP TABLE IF EXISTS level_wips;
 	]]
 	db:close()
-
+--]=]
 	Loaded = {}
 end
 
