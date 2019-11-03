@@ -28,9 +28,7 @@ local assert = assert
 local pairs = pairs
 
 -- Modules --
-local adaptive = require("tektite_core.table.adaptive")
 local args = require("iterator_ops.args")
-local frames = require("corona_utils.frames")
 local powers_of_2 = require("bitwise_ops.powers_of_2")
 
 -- Corona globals --
@@ -42,7 +40,6 @@ local timer = timer
 local physics = require("physics")
 
 -- Cached module references --
-local _Implements_Pred_
 local _SetVisibility_
 
 -- Exports --
@@ -83,30 +80,6 @@ function M.AddHandler (type, func)
 	Handlers[type] = func
 end
 
--- --
-local InterfacePreds, Interfaces = {}, {}
-
---- DOCME
-function M.AddInterfaces (type, ...)
-	for _, v in args.Args(...) do
-		adaptive.AddToSet_Member(Interfaces, type, v)
-	end
-end
-
---- DOCME
-function M.AddInterfaces_Pred (type, ...)
-	local preds = InterfacePreds[type] or {}
-
-	for _, what, pred in args.ArgsByN(2, ...) do
-		adaptive.AddToSet_Member(Interfaces, type, what)
-
-		preds[what] = pred
-	end
-
-	InterfacePreds[type] = preds
-end
-
--- --
 local Watching
 
 --- DOCME
@@ -250,7 +223,7 @@ function M.FilterBits (...)
 	return bits
 end
 
---- Getter.
+---
 -- @param object Object to query.
 -- @return Collision type of _object_, or **nil** if absent.
 -- @see SetType
@@ -258,45 +231,7 @@ function M.GetType (object)
 	return Types[object]
 end
 
---- DOCME
-function M.Implements (object, what)
-	return adaptive.InSet(Interfaces[Types[object]], what)
-end
-
---- DOCME
-function M.Implements_Pred (object, what, ...)
-	local type = Types[object]
-	local implements = adaptive.InSet(Interfaces[type], what)
-
-	if implements then
-		local preds = InterfacePreds[type]
-		local func = preds and preds[what]
-
-		if func then
-			return func(...) and "passed" or "failed"
-		else
-			return "no_predicate"
-		end
-	end
-
-	return "does_not_implement"
-end
-
---- DOCME
-function M.Implements_PredOrDefFail (object, what, ...)
-	local res = _Implements_Pred_(object, what, ...)
-
-	return res ~= "no_predicate" and res or "failed"
-end
-
---- DOCME
-function M.Implements_PredOrDefPass (object, what, ...)
-	local res = _Implements_Pred_(object, what, ...)
-
-	return res ~= "no_predicate" and res or "passed"
-end
-
---- Predicate.
+---
 -- @pobject object Object to poll about visibility.
 -- @treturn boolean Is _object_ visible?
 -- @see SetVisibility
@@ -304,7 +239,7 @@ function M.IsVisible (object)
 	return not IsHidden[object]
 end
 
---- Assigns a sensor body to an object.
+--- Assign a sensor body to an object.
 -- @pobject object Object to make into a sensor.
 -- @string body_type Physics body type, or **"dynamic"** by default.
 -- @ptable props Optional properties.
@@ -314,14 +249,14 @@ function M.MakeSensor (object, body_type, props)
 	object.isSensor = true
 end
 
---- Attempts to remove an object's body.
+--- Attempt to remove an object's body.
 -- @param object Object with body to remove.
 -- @treturn boolean Was a body removed?
 function M.RemoveBody (object)
 	return Types[object] ~= nil and physics.removeBody(object)
 end
 
---- Associates a collision type with _object_. This is used to choose _object_'s handler in
+--- Associate a collision type with _object_. This is used to choose _object_'s handler in
 -- the event of a collision, and will also be provided (as a convenience) to the other
 -- object's handler.
 -- @param object Object to type.
@@ -377,7 +312,6 @@ function M.SetVisibility (object, show)
 	end
 end
 
--- Enter Level response
 local function EnterLevel ()
 	if not IsHidden then
 		physics.start()
@@ -406,10 +340,8 @@ local function Watch (o1, o2, value)
 	end
 end
 
--- --
 local FrameID
 
---
 local function AuxCollision (phase, o1, o2, contact)
 	local t1, t2 = Types[o1], Types[o2]
 	local h1, h2 = Handlers[t1], Handlers[t2]
@@ -438,7 +370,7 @@ for k, v in pairs{
 	end,
 
 	-- enterFrame --
-	enterFrame = function()
+	enterFrame = function(event)
 		if Watching then
 			-- Check all (valid) pairs being watched. If any objects are still colliding
 			-- (since they collided again when a new body was added), keep the entries
@@ -459,8 +391,7 @@ for k, v in pairs{
 				end
 			end
 
-			-- Now that all checks have been done against it, update the collision frame ID.
-			FrameID = Runtime.getFrameID()
+			FrameID = event.frame
 		end
 	end,
 
@@ -480,7 +411,6 @@ for k, v in pairs{
 	Runtime:addEventListener(k, v)
 end
 
-_Implements_Pred_ = M.Implements_Pred
 _SetVisibility_ = M.SetVisibility
 
 return M
