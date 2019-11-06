@@ -165,14 +165,16 @@ local Lists = setmetatable({}, { __mode = "k" })
 local function GetRequirement (requirements, id, which)
 	local list = Lists[id]
 
-	if list then
-		requirements[#requirements + 1] = list
-	else
+	if not list then
 		assert(false, "Requirement '" .. which .. "' not found")
+	elseif list.added ~= Generation then -- guard against duplicates
+		requirements[#requirements + 1], list.added = list, Generation
 	end
 end
 
 local function GetRequires (list, requirements, requires)
+	Generation = Generation + 1
+
 	if type(requires) == "table" then
 		for i, id in ipairs(requires) do
 			GetRequirement(requirements, id, i)
@@ -219,27 +221,25 @@ end
 local Priority = { mat4 = 1, mat3 = 2, mat2 = 3, vec4 = 4, vec3 = 5, vec2 = 6, float = 7 }
 
 local function GetVaryings (list, requirements, varyings)
-	if varyings == nil then
-		return
-	else
-		CheckType(varyings, "varyings", "table")
-	end
-
-	-- n.b. at the moment, only way the list may be this size
-	assert(#list.snippets == 2, "Varyings expect fragment and vertex kernels to be present")
-
 	local into = list.varyings
 
-	for vname, vtype in pairs(varyings) do
-		CheckType(vname, "varying name", "string")
-		CheckType(vtype, "varying type", "string")
+	if varyings then
+		CheckType(varyings, "varyings", "table")
 
-		if not Priority[vtype] then
-			assert(false, "Unknown '" .. vtype .. "' varying type")
-		end
+		-- n.b. at the moment, only way the list may be this size
+		assert(#list.snippets == 2, "Varyings expect fragment and vertex kernels to be present")
 
-		if IsNameNew(vname, vtype, requirements) then
-			into[vname] = vtype
+		for vname, vtype in pairs(varyings) do
+			CheckType(vname, "varying name", "string")
+			CheckType(vtype, "varying type", "string")
+
+			if not Priority[vtype] then
+				assert(false, "Unknown '" .. vtype .. "' varying type")
+			end
+
+			if IsNameNew(vname, vtype, requirements) then
+				into[vname] = vtype
+			end
 		end
 	end
 
@@ -320,7 +320,7 @@ local function GetSortedVaryingStrings (varyings)
 		end)
 
 		for i, name in ipairs(out) do
-			out[i] = "varying P_UV " .. varyings[name] .. " name;"
+			out[i] = "varying P_UV " .. varyings[name] .. " " .. name .. ";"
 		end
 
 		out[#out + 1] = "\n"
