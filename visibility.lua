@@ -167,8 +167,10 @@ function M.OnCollision (o1, o2, phase, id)
 	if phase ~= "began" then
 		Watch(o1, o2, nil)
 	elseif Watch(o1, o2, id) then
-		return
+		return false
 	end
+
+	return true
 end
 
 --- DOCME

@@ -182,9 +182,9 @@ for k, v in pairs{
 	collision = function(event)
 		local o1, o2, phase = event.object1, event.object2, event.phase
 
-		visibility.OnCollision(o1, o2, phase, FrameID)
-
-		AuxCollision(phase, o1, o2, event.contact)
+		if visibility.OnCollision(o1, o2, phase, FrameID) then
+			AuxCollision(phase, o1, o2, event.contact)
+		end
 	end,
 
 	-- enterFrame --
