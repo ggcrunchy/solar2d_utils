@@ -29,16 +29,17 @@ local pairs = pairs
 
 -- Modules --
 local args = require("iterator_ops.args")
-local powers_of_2 = require("bitwise_ops.powers_of_2")
 local visibility = require("corona_utils.visibility")
 
 -- Corona globals --
 local display = display
 local Runtime = Runtime
-local timer = timer
 
 -- Corona modules --
 local physics = require("physics")
+
+-- Plugins --
+local bit = require("plugin.bit")
 
 -- Cached module references --
 local _GetType_
@@ -50,29 +51,15 @@ local M = {}
 --
 --
 
---- Activate or deactivate of a physics object, via a 0-lapse timer.
--- @pobject object Physics object.
--- @bool active Activate? Otherwise, deactivate.
--- @return (0-lapse) timer handle.
-function M.Activate (object, active)
-	return timer.performWithDelay(0, function()
-		object.isBodyActive = active
-	end)
-end
-
 local Handlers = {}
 
---- Defines a collision handler for objects of a given collision type with other objects.
+--- Define a collision handler for objects of a given collision type with other objects.
 --
 -- When two objects collide, each is checked for a handler. Each handler that exists is
 -- called as
 --    handler(phase, object, other, contact)
 -- where _phase_ is **"began"** or **"ended"**, _object_ is what supplied _handler_, _other_
 -- is what collided with _object_, and _contact_ is the physics object passed via the event.
---
--- The collision type of _object_ is not supplied, being implicit in the handler itself. For
--- all practical purposes, _type_ is just a convenient name for _func_; there is no real
--- reason to assign a handler to more than one type.
 -- @param type Type of object that will use this handler, as assigned by @{SetType}.
 -- @callable func Handler function, or **nil** to remove the handler.
 function M.AddHandler (type, func)
@@ -106,7 +93,7 @@ function M.FilterBits (...)
 
 	for _, name in args.Args(...) do
 		if name ~= nil then
-			bits = powers_of_2.Set(bits, NamedFlags[name])
+			bits = bit.bor(bits, NamedFlags[name])
 		end
 	end
 
@@ -159,8 +146,6 @@ local function EnterLevel (event)
 	visibility.Start()
 end
 
-local FrameID
-
 local function AuxCollision (phase, o1, o2, contact)
 	local h1, h2 = Handlers[_GetType_(o1)], Handlers[_GetType_(o2)]
 
@@ -176,6 +161,8 @@ end
 local function OnEnded (object, other)
 	AuxCollision("ended", object, other, false)
 end
+
+local FrameID
 
 for k, v in pairs{
 	-- Collision --

@@ -30,6 +30,7 @@ local pairs = pairs
 local random = math.random
 local rawequal = rawequal
 local running = coroutine.running
+local setmetatable = setmetatable
 local tonumber = tonumber
 local type = type
 
@@ -39,7 +40,6 @@ local indexOf = table.indexOf
 -- Modules --
 local array_funcs = require("tektite_core.array.funcs")
 local file = require("corona_utils.file")
-local meta = require("tektite_core.table.meta")
 
 -- Corona globals --
 local audio = audio
@@ -53,7 +53,6 @@ local M = {}
 --
 --
 
--- --
 local IsQuiet
 
 --- Enable or disable audio. When disabled, calls from this module will be no-ops.
@@ -62,7 +61,6 @@ function M.Enable (enable)
 	IsQuiet = not enable
 end
 
---
 local function RemoveDeadChannels (channels)
 	local n = #channels
 
@@ -73,13 +71,10 @@ local function RemoveDeadChannels (channels)
 	end
 end
 
--- --
 local Opts = {}
 
--- --
 local DeferredPlay
 
---
 local function Backfill3 (t, i, n)
 	t[i], t[i + 1], t[i + 2] = t[n - 2], t[n - 1], t[n]
 	t[n - 2], t[n - 1], t[n] = nil
@@ -87,7 +82,6 @@ local function Backfill3 (t, i, n)
 	return n - 3
 end
 
--- Common play logic
 local function AuxPlay (group, handles, name)
 	local channels = group.m_channels
 
@@ -176,7 +170,6 @@ local function AuxPlay (group, handles, name)
 	end
 end
 
--- --
 local None = {}
 
 -- Plays a bit of audio (unless it has already played too recently)
@@ -196,7 +189,6 @@ local function Play (group, handles, name, delay)
 	return play_timer
 end
 
---
 local function ClearHandles (handles)
 	for k, v in pairs(handles) do
 		if type(v) ~= "string" then
@@ -207,7 +199,6 @@ local function ClearHandles (handles)
 	end
 end
 
--- --
 local DeferredLoad
 
 local function LoadInfo (handles, info)
@@ -221,8 +212,9 @@ end
 -- Groups of related audio, e.g. all sounds related to a type of object --
 local Groups = {}
 
--- Group methods --
 local SoundGroup = {}
+
+SoundGroup.__index = SoundGroup
 
 --- DOCME
 function SoundGroup:IsActive ()
@@ -407,11 +399,9 @@ end
 local function AuxNewSoundGroup (info)
 	local group = { m_channels = {}, m_handles = None, m_info = info }
 
-	meta.Augment(group, SoundGroup)
-
 	Groups[#Groups + 1] = group
 
-	return group
+	return setmetatable(group, SoundGroup)
 end
 
 --
