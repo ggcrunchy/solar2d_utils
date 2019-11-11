@@ -330,7 +330,7 @@ local function GetSortedVaryingStrings (varyings)
 end
 
 --- DOCME
-function M.Augment (params, out)
+function M.AugmentKernels (params, out)
 	out = out or {}
 
 	local list, requirements = NewList(), {}
