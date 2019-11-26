@@ -1,4 +1,4 @@
---- Various mesh-related operations.
+--- Various geometry soup types and their operations.
 
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local setmetatable = setmetatable
+local type = type
 
 -- Modules --
 local embedded_free_list = require("tektite_core.array.embedded_free_list")
@@ -32,7 +33,6 @@ local embedded_free_list = require("tektite_core.array.embedded_free_list")
 -- Cached module references --
 local _AddQuadIndices_
 local _AddTriangleIndices_
-local _AddVertex_
 
 -- Exports --
 local M = {}
@@ -50,6 +50,15 @@ function M.AddQuadIndices (indices, i1, i2, i3, i4, base)
 	_AddTriangleIndices_(indices, i2, i3, i4, base + 3)
 end
 
+--- DOCME
+function M.AddTexturedVertex (uvs, vertices, x, y, w, h)
+	uvs[#uvs + 1] = x / w + .5
+	uvs[#uvs + 1] = y / h + .5
+
+	vertices[#vertices + 1] = x
+	vertices[#vertices + 1] = y
+end
+
 --- DOCMEMORE
 -- Add the indices as a triangle
 function M.AddTriangleIndices (indices, i1, i2, i3, base)
@@ -60,28 +69,34 @@ function M.AddTriangleIndices (indices, i1, i2, i3, base)
 	indices[base + 3] = i3
 end
 
---- DOCME
--- TODO: better name?
-function M.AddVertex (uvs, vertices, x, y, w, h)
-	uvs[#uvs + 1] = x / w + .5
-	uvs[#uvs + 1] = y / h + .5
+local QuadSoup = {}
 
-	vertices[#vertices + 1] = x
-	vertices[#vertices + 1] = y
+QuadSoup.__index = QuadSoup
+
+local function PadQuadSoup (QS, n, nused)
+	QS.m_free = embedded_free_list.Extend(QS.m_slots, n - nused, QS.m_free)
+
+	local indices, final = QS.m_indices, n * 4 -- final legal index, will come into use if and when stream saturated
+
+	for i = 6 * (nused - 1) + 1, 6 * n do
+		indices[i] = final -- make all degenerate
+	end
 end
 
-local QuadStream = {}
-
-QuadStream.__index = QuadStream
-
 --- DOCME
-function QuadStream:GetIndices ()
+function QuadSoup:GetIndices ()
+	local nused, n = #self.m_slots, self.m_capacity
+
+	if nused < n then
+		PadQuadSoup(self, n, nused)
+	end
+
 	return self.m_indices
 end
 
 --- DOCME
 -- @treturn ?|uint|nil
-function QuadStream:Insert ()
+function QuadSoup:Insert ()
 	local slots, first = self.m_slots
 	local index, free = embedded_free_list.GetInsertIndex(slots, self.m_free)
 
@@ -91,9 +106,9 @@ function QuadStream:Insert ()
 
 		slots[index], first = true, 2 * base + 1 -- two coordinates per vertex
 
-		if self.m_index_mode then
-			_AddQuadIndices_(self.m_indices, base + 1, base + 2, base + 3, base + 4, iminus1 * 6)
-		end
+		local bottom = base + (self.m_jump or 2)
+
+		_AddQuadIndices_(self.m_indices, base + 1, base + 2, bottom + 1, bottom + 2, iminus1 * 6)
 
 		self.m_free = free
 	end
@@ -101,20 +116,22 @@ function QuadStream:Insert ()
 	return first
 end
 
+local function MakeDegenerateQuad (indices, offset)
+	local index = 2 * offset + 1
+
+	_AddQuadIndices_(indices, index, index, index, index, offset * 6 + 1)
+end
+
 --- DOCME
 -- @uint first
-function QuadStream:Remove (first)
+function QuadSoup:Remove (first)
 	local qoffset = .125 * (first - 1) -- quad = four corners, two coordinates each
 	local slots, removed = self.m_slots, false
 
 	if embedded_free_list.InUse(slots, qoffset + 1) then
 		self.m_free = embedded_free_list.RemoveAt(slots, qoffset + 1, self.m_free)
 
-		if self.m_index_mode then
-			local index = 2 * qoffset + 1
-
-			_AddQuadIndices_(self.m_indices, index, index, index, index, qoffset * 6 + 1) -- make degenerate
-		end
+		MakeDegenerateQuad(self.m_indices, qoffset)
 
 		removed = true
 	end
@@ -124,54 +141,48 @@ end
 
 --- DOCME
 -- @uint n
--- @string[opt="vertex"] degen
-function M.NewQuadStream (n, degen)
-	local stream, indices = { m_capacity = n, m_slots = {} }, {}
+-- @string[opt="indexed"] mode
+function M.NewQuadSoup (n, mode)
+	local qs, indices = { m_capacity = n, m_slots = {} }, {}
 
-	if degen == "index" then
-		local final = n * 4 -- final legal index, will come into use if and when stream saturated
-
-		for i = 1, 6 * n do
-			indices[i] = final -- begin with all degenerate
-		end
-
-		stream.m_index_mode = true
+	if mode == "vertex" then
+		-- "fat" mesh, replicated vertices / uvs
+	elseif mode == "deformed_rects" then
+		-- list of rects, some replication
+		-- uvs?
 	else
-		local offset = 0
-
-		for _ = 1, n do
-			_AddQuadIndices_(indices, offset + 1, offset + 2, offset + 3, offset + 4)
-
-			offset = offset + 4
+		if type(mode) == "number" then
+			qs.m_cur_column, qs.m_cols = 1, mode
 		end
+
+		qs.m_indices = indices
 	end
 
-	stream.m_indices = indices
+	qs.m_mode = mode
 
-	return setmetatable(stream, QuadStream)
+	return setmetatable(qs, QuadSoup)
 end
 
-local TriangleStream = {}
+local TriangleSoup = {}
 
 --- DOCME
 -- @treturn ?|uint|nil
-function TriangleStream:Insert ()
+function TriangleSoup:Insert ()
 	--
 end
 
 --- DOCME
 -- @uint index
-function TriangleStream:Remove (first)
+function TriangleSoup:Remove (first)
 	--
 end
 
 --- DOCME
-function M.NewTriangleStream (n)
+function M.NewTriangleSoup (n)
 	--
 end
 
 _AddQuadIndices_ = M.AddQuadIndices
 _AddTriangleIndices_ = M.AddTriangleIndices
-_AddVertex_ = M.AddVertex
 
 return M
