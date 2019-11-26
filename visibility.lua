@@ -175,7 +175,7 @@ end
 
 --- DOCME
 function M.Enable (object, show)
-	if display.isValid(object) then
+	if display.isValid(object) and IsHidden then
 		local hide, is_hidden = not show, IsHidden[object]
 
 		IsHidden[object] = hide
