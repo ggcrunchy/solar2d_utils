@@ -24,6 +24,7 @@
 --
 
 -- Standard library imports --
+local floor = math.floor
 local setmetatable = setmetatable
 local type = type
 
@@ -77,7 +78,7 @@ local function PadQuadSoup (QS, n, nused)
 	QS.m_free = embedded_free_list.Extend(QS.m_slots, n - nused, QS.m_free)
 
 	local indices, final = QS.m_indices, n * 4 -- final legal index, will come into use if and when stream saturated
-
+-- TODO: not right for grid
 	for i = 6 * (nused - 1) + 1, 6 * n do
 		indices[i] = final -- make all degenerate
 	end
@@ -101,14 +102,19 @@ function QuadSoup:Insert ()
 	local index, free = embedded_free_list.GetInsertIndex(slots, self.m_free)
 
 	if index <= self.m_capacity then
-		local iminus1 = index - 1
-		local base = iminus1 * 4
+		local iminus1, cols, above, to_below = index - 1, self.m_cols
 
-		slots[index], first = true, 2 * base + 1 -- two coordinates per vertex
+		if cols then
+			above, to_below = iminus1 + floor(iminus1 / cols), cols + 1 -- line break on last column
+		else
+			above, to_below = iminus1 * 4, 2 -- "below" simply next two in line after first pair
+		end
 
-		local bottom = base + (self.m_jump or 2)
+		slots[index], first = true, 2 * above + 1 -- two coordinates per vertex
 
-		_AddQuadIndices_(self.m_indices, base + 1, base + 2, bottom + 1, bottom + 2, iminus1 * 6)
+		local below = above + to_below
+
+		_AddQuadIndices_(self.m_indices, above + 1, above + 2, below + 1, below + 2, iminus1 * 6)
 
 		self.m_free = free
 	end
@@ -127,7 +133,7 @@ end
 function QuadSoup:Remove (first)
 	local qoffset = .125 * (first - 1) -- quad = four corners, two coordinates each
 	local slots, removed = self.m_slots, false
-
+-- TODO: not right for grid
 	if embedded_free_list.InUse(slots, qoffset + 1) then
 		self.m_free = embedded_free_list.RemoveAt(slots, qoffset + 1, self.m_free)
 
@@ -152,7 +158,7 @@ function M.NewQuadSoup (n, mode)
 		-- uvs?
 	else
 		if type(mode) == "number" then
-			qs.m_cur_column, qs.m_cols = 1, mode
+			qs.m_cols = mode
 		end
 
 		qs.m_indices = indices
