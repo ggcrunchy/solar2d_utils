@@ -165,7 +165,6 @@ end
 local FrameID
 
 for k, v in pairs{
-	-- Collision --
 	collision = function(event)
 		local o1, o2, phase = event.object1, event.object2, event.phase
 
@@ -174,23 +173,19 @@ for k, v in pairs{
 		end
 	end,
 
-	-- enterFrame --
 	enterFrame = function(event)
 		if visibility.Update(FrameID, OnEnded) then
 			FrameID = event.frame
 		end
 	end,
 
-	-- Enter Level --
 	enter_level = EnterLevel,
 
-	-- Leave Level --
 	leave_level = function()
 		physics.stop()
 		visibility.Stop()
 	end,
 
-	-- Reset Level --
 	reset_level = EnterLevel
 } do
 	Runtime:addEventListener(k, v)

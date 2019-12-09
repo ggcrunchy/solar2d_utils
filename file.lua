@@ -76,17 +76,7 @@ if OnSimulator then
 	end
 end
 
---- DOCME
-function M.AddDirectory (name, base)
-	local path = system.pathForFile("", base)
-
-	if lfs.attributes(path .. "/" .. name, "mode") ~= "directory" then -- <- slash needed? (should make consistent?)
-		lfs.chdir(path)
-		lfs.mkdir(name)
-	end
-end
-
---- Chooses a Corona base directory for a file. If the file is found under the "preferred"
+--- Choose a Corona base directory for a file. If the file is found under the "preferred"
 -- directory, that one is used; otherwise, **system.ResourceDirectory** is used (**n.b.** the
 -- file may or may not exist, in this case).
 --
@@ -182,7 +172,7 @@ end
 -- Is this running on an Android device? --
 local OnAndroid = system.getInfo("platform") == "android" and not OnSimulator
 
---- Enumerates files in a given directory.
+--- Enumerate files in a given directory.
 -- @string path Directory path.
 -- @ptable[opt] opts Enumeration options. Fields:
 --
@@ -255,6 +245,16 @@ function M.GetContents (path, base)
 		-- TODO: AssetReader
 	else
 		return GetFileContents(PathForFile(path, base))
+	end
+end
+
+--- DOCME
+function M.MakeDirectory (name, base)
+	local path = system.pathForFile("", base)
+
+	if lfs.attributes(path .. "/" .. name, "mode") ~= "directory" then -- <- slash needed? (should make consistent?)
+		lfs.chdir(path)
+		lfs.mkdir(name)
 	end
 end
 
@@ -402,7 +402,7 @@ function M.PutInTrash_Guard (name, object, base)
 	AuxPutInTrash(name, assert(object, "Missing guard object"), base)
 end
 
---- Launches a timer to watch a file or directory for modifications.
+--- Launch a timer to watch a file or directory for modifications.
 -- @string path File or directory path.
 -- @callable func On modification, this is called as `func(path, how)`, where _how_ is one of:
 --

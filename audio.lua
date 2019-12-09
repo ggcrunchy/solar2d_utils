@@ -568,10 +568,8 @@ local function LeaveLevel ()
 end
 
 for k, v in pairs{
-	-- Leave Level --
 	leave_level = LeaveLevel,
 
-	-- Reset Level --
 	reset_level = function()
 		for _, group in ipairs(Groups) do
 			if IsQuiet then
