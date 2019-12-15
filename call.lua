@@ -76,8 +76,6 @@ function M.AtLimit ()
 	return Count == Limit
 end
 
-
-
 --- DOCME
 function M.DispatchOrHandleEvent (object, event, def)
 	local target, result = _GetRedirectTarget_(object)
@@ -92,7 +90,7 @@ function M.DispatchOrHandleEvent (object, event, def)
 		local dispatch_event = object.dispatchEvent
 
 		if dispatch_event then
-			dispatch_event(target, event)
+			dispatch_event(object, event)
 		else
 			local handler = object[event.name]
 
