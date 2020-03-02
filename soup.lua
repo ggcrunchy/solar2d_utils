@@ -239,6 +239,14 @@ function MeshBuilder:ClearLeftFlag ()
 	self[_left_flag] = nil
 end
 
+local function GetIndices (MB)
+	local indices = MB[_indices] or {} -- if first emission, might not have indices
+
+	MB[_indices] = indices
+
+	return indices
+end
+
 local function NewIndex (MB)
 	local max_index = MB[_max_index] + 1
 
@@ -247,23 +255,87 @@ local function NewIndex (MB)
 	return max_index
 end
 
+local function PrepareToAdvance (MB, ul_offset, ur_index)
+	MB:ClearAboveFlag()
+	MB:ClearLeftFlag()
+	MB:SetUpperLeft(nil)
+	MB:SetUpperRight(nil)
+	MB:SetLowerLeft(nil)
+	MB:SetLowerRight(nil)
+
+	local col = MB[_cur_column]
+
+	if col then
+		local above, ncols = MB[_above], MB[_ncols]
+
+		if ur_index then -- is this a bottom edge?
+			ul_offset, above[-col] = -ul_offset, ur_index -- indicate explicit index
+		end
+
+		above[col] = ul_offset -- n.b. on last column in first row, stomps "first_row" out
+
+		if col == ncols then
+			col = 0 -- increment back to 1
+		end
+
+		ul_offset = above[ncols] ~= "first_row" and above[col + 1] -- cf. ResetMethod()
+
+		if ul_offset then
+			local indices, ul, ur = MB[_indices]
+
+			if ul_offset < 0 then -- explicit index?
+				ul, ur = -ul_offset, above[-(col + 1)]
+			else
+				ul, ur = indices[ul_offset], indices[ul_offset + 1]
+			end
+
+			MB:SetAboveFlag()
+			MB:SetUpperLeft(ul)
+			MB:SetUpperRight(ur)
+		end
+
+		MB[_cur_column] = col + 1
+	end
+
+	return col == 0 and "newline"
+end
+
+local function SetNonIndexShape (MB, shape)
+	assert(MB[_shape] ~= "indices", "Index shape in progress")
+
+	MB[_index_shape_count], MB[_shape] = 0, shape
+end
+
+--- DOCME
+function MeshBuilder:EmitBottomEdge ()
+	SetNonIndexShape(self, "bottom_edge")
+
+	local ll = self[_lower_left] or NewIndex(self)
+	local lr = self[_lower_right] or NewIndex(self)
+
+	if PrepareToAdvance(self, ll, lr) ~= "newline" then -- explicit indices
+		-- TODO: what if has above? should probably set upper-left, but what about left edge flag?
+		self:SetLowerLeft(lr)
+	end
+end
+
 local function AuxEmitIndex (MB, index)
-	local indices, offset = MB[_indices] or {}, MB[_offset] -- if first emission, might not have indices
+	local indices, offset = GetIndices(MB), MB[_offset]
 
 	indices[offset + 1] = index or NewIndex(MB)
 
-	MB[_index_shape_count], MB[_indices], MB[_offset], MB[_shape] = MB[_index_shape_count] + 1, indices, offset + 1, "indices"
+	MB[_index_shape_count], MB[_offset], MB[_shape] = MB[_index_shape_count] + 1, offset + 1, "indices"
 end
 
 local function DegenerateIndex (MB)
-	local indices, offset = MB[_indices] or {}, MB[_offset] -- if first emission, might not have indices
+	local indices, offset = GetIndices(MB), MB[_offset]
 
 	if offset ~= MB[_base_offset] then -- any index available?
 		return indices[offset]
 	else -- no: make a dummy and refer to it
 		local index = NewIndex(MB)
 
-		indices[offset + 1], MB[_indices], MB[_offset] = index, indices, offset + 1
+		indices[offset + 1], MB[_offset] = index, offset + 1
 
 		return index
 	end
@@ -302,87 +374,50 @@ function MeshBuilder:EmitIndex (index)
 	AuxEmitIndex(self, index)
 end
 
-local function PrepareToAdvance (MB, ul_offset)
-	MB:ClearAboveFlag()
-	MB:ClearLeftFlag()
-	MB:SetUpperLeft(nil)
-	MB:SetUpperRight(nil)
-	MB:SetLowerLeft(nil)
-	MB:SetLowerRight(nil)
-
-	local col = MB[_cur_column]
-
-	if col then
-		local above, ncols = MB[_above], MB[_ncols]
-		local is_first_row = above[ncols] == "first_row" -- cf. Reset() method; n.b. read before written...
-
-		above[col] = ul_offset	-- ...so that not stomped here, on final column;
-								-- setting that one indicates the first row is done;
-								-- the offset is left behind for the next row...
-
-		if col == ncols then
-			col = 0 -- increment back to 1
-		end
-
-		ul_offset = not is_first_row and above[col + 1] -- ...and read back here
-
-		if ul_offset then
-			local indices = MB[_indices]
-
-			MB:SetAboveFlag()
-			MB:SetUpperLeft(indices[ul_offset])
-			MB:SetUpperRight(indices[ul_offset + 1])
-		end
-
-		MB[_cur_column] = col + 1
-	end
-
-	return col == 0 and "newline"
-end
-
 --- DOCME
 function MeshBuilder:EmitQuad ()
-	assert(self[_shape] ~= "indices", "Index shape in progress")
+	SetNonIndexShape(self, "quad")
 
-	local indices, offset = self[_indices] or {}, self[_offset] -- if first emission, might not have indices
+	local indices, offset = GetIndices(self), self[_offset]
 	local ul = self[_upper_left] or NewIndex(self)
 	local ur = self[_upper_right] or NewIndex(self)
-	local ll = self[_lower_left] or NewIndex(self)
+	local ll = self[_lower_left] or NewIndex(self) -- cf. note in EmitBottomEdge() method
 	local lr = self[_lower_right] or NewIndex(self)
 
 	_AddQuadIndices_(indices, ul, ur, ll, lr, offset)
+
+	self[_offset] = offset + 6
 
 	if PrepareToAdvance(self, offset + 5) ~= "newline" then -- offset of lower-left, cf. AddQuadIndices()
 		self:SetLeftFlag()
 		self:SetUpperLeft(ur) -- n.b. often redundant
 		self:SetLowerLeft(lr)
 	end
-
-	self[_index_shape_count], self[_indices], self[_offset], self[_shape]  = 0, indices, offset + 6, "quad"
 end
 
 --- DOCME
 function MeshBuilder:EmitTriangle ()
-	assert(self[_shape] ~= "indices", "Index shape in progress")
+	SetNonIndexShape(self, "tri")
 
-	local above_flag, indices, left_flag, offset, i1, i2, i3 = self[_above_flag], self[_indices] or {}, self[_left_flag], self[_offset] -- if first emission, might not have indices
+	local above_flag, left_flag, i1, i2, i3 = self[_above_flag], self[_left_flag]
+	local indices, offset = GetIndices(self), self[_offset]
 	local ul = self[_upper_left]
 	local ur = self[_upper_right]
 	local ll = self[_lower_left]
 	local lr = self[_lower_right]
 
 	if above_flag then
-		-- side above, so triangle will be flush with it in forms:
+		-- edge above, so triangle will be flush with it in forms:
 		--
 		-- x--x     x--x
 		--  \ | and | /
 		--   \|     |/
 		--    x     x
 		--
-		-- the triangle on the right will also be flush with a side on the left
+		-- the triangle on the right will also be flush with an edge on the left
 		i1, i2 = ul, ur
 
-		if left_flag then -- n.b. ll or lr might be nil, so use "if"
+		if left_flag then -- n.b. ll or lr might be nil
 			i3 = ll
 		else
 			i3 = lr
@@ -399,11 +434,12 @@ function MeshBuilder:EmitTriangle ()
 	end
 
 	i1 = i1 or NewIndex(self)
-	i2 = i2 or NewIndex(self)	-- n.b. this call is sequenced...
-	i3 = i3 or NewIndex(self)	-- ...before this one to ensure i2 is placed before i3, so that we can put
-								-- i2's offset into the "above" list and recover both
+	i2 = i2 or NewIndex(self) -- cf. note in EmitBottomEdge() method, with i2 and i3 in lieu of ll and lr
+	i3 = i3 or NewIndex(self)
 
 	_AddTriangleIndices_(indices, i1, i2, i3, offset)
+
+	self[_offset] = offset + 3
 
 	if PrepareToAdvance(self, not above_flag and offset + 2) ~= "newline" and not left_flag then -- offset of lower-left, in non-"above" case
 		self:SetLeftFlag()
@@ -416,8 +452,6 @@ function MeshBuilder:EmitTriangle ()
 			self:SetLowerLeft(i2)
 		end
 	end
-
-	self[_index_shape_count], self[_indices], self[_offset], self[_shape]  = 0, indices, offset + 3, "tri"
 end
 
 --- DOCME
@@ -443,6 +477,8 @@ function MeshBuilder:GetLastIndices (how)
 		end
 	elseif shape == "tri" then
 		count = 3
+	elseif shape == "bottom_edge" then
+		-- TODO!
 	else
 		count = self[_index_shape_count] -- cf. note in FinishIndexShape() method
 	end
