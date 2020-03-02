@@ -24,12 +24,26 @@
 --
 
 -- Standard library imports --
-local floor = math.floor
+local assert = assert
 local setmetatable = setmetatable
-local type = type
+local unpack = unpack
 
--- Modules --
-local embedded_free_list = require("tektite_core.array.embedded_free_list")
+-- Unique keys --
+local _above = {}
+local _above_flag = {}
+local _base_offset = {}
+local _cur_column = {}
+local _index_shape_count = {}
+local _indices = {}
+local _left_flag = {}
+local _lower_left = {}
+local _lower_right = {}
+local _max_index = {}
+local _ncols = {}
+local _offset = {}
+local _shape = {}
+local _upper_left = {}
+local _upper_right = {}
 
 -- Cached module references --
 local _AddQuadIndices_
@@ -69,161 +83,6 @@ function M.AddTriangleIndices (indices, i1, i2, i3, base)
 	indices[base + 2] = i2
 	indices[base + 3] = i3
 end
-
-local QuadSoup = {}
-
-QuadSoup.__index = QuadSoup
-
-local function PadQuadSoup (QS, n, nused)
-	QS.m_free = embedded_free_list.Extend(QS.m_slots, n - nused, QS.m_free)
-
-	local indices, final = QS.m_indices, n * 4 -- final legal index, will come into use if and when stream saturated
--- TODO: not right for grid
-	for i = 6 * (nused - 1) + 1, 6 * n do
-		indices[i] = final -- make all degenerate
-	end
-end
-
---- DOCME
-function QuadSoup:GetIndices ()
-	local nused, n = #self.m_slots, self.m_capacity
-
-	if nused < n then
-		PadQuadSoup(self, n, nused)
-	end
-
-	return self.m_indices
-end
-
---- DOCME
--- @treturn ?|uint|nil
-function QuadSoup:Insert ()
-	local slots, first = self.m_slots
-	local index, free = embedded_free_list.GetInsertIndex(slots, self.m_free)
-
-	if index <= self.m_capacity then
-		local iminus1, cols, above, to_below = index - 1, self.m_cols
-
-		if cols then
-			above, to_below = iminus1 + floor(iminus1 / cols), cols + 1 -- line break on last column
-		else
-			above, to_below = iminus1 * 4, 2 -- "below" simply next two in line after first pair
-		end
-
-		slots[index], first = true, 2 * above + 1 -- two coordinates per vertex
-
-		local below = above + to_below
-
-		_AddQuadIndices_(self.m_indices, above + 1, above + 2, below + 1, below + 2, iminus1 * 6)
-
-		self.m_free = free
-	end
-
-	return first
-end
-
-local function MakeDegenerateQuad (indices, offset)
-	local index = 2 * offset + 1
-
-	_AddQuadIndices_(indices, index, index, index, index, offset * 6 + 1)
-end
-
---- DOCME
--- @uint first
-function QuadSoup:Remove (first)
-	local qoffset = .125 * (first - 1) -- quad = four corners, two coordinates each
-	local slots, removed = self.m_slots, false
--- TODO: not right for grid
-	if embedded_free_list.InUse(slots, qoffset + 1) then
-		self.m_free = embedded_free_list.RemoveAt(slots, qoffset + 1, self.m_free)
-
-		MakeDegenerateQuad(self.m_indices, qoffset)
-
-		removed = true
-	end
-
-	return removed
-end
-
---- DOCME
--- @uint n
--- @string[opt="indexed"] mode
-function M.NewQuadSoup (n, mode)
-	local qs, indices = { m_capacity = n, m_slots = {} }, {}
-
-	if mode == "vertex" then
-		-- "fat" mesh, replicated vertices / uvs
-	elseif mode == "deformed_rects" then
-		-- list of rects, some replication
-		-- uvs?
-	else
-		if type(mode) == "number" then
-			qs.m_cols = mode
-		end
-
-		qs.m_indices = indices
-	end
-
-	qs.m_mode = mode
-
-	return setmetatable(qs, QuadSoup)
-end
-
-local TriangleSoup = {}
-
---- DOCME
--- @treturn ?|uint|nil
-function TriangleSoup:Insert ()
-	--
-end
-
---- DOCME
--- @uint index
-function TriangleSoup:Remove (first)
-	--
-end
-
---- DOCME
-function M.NewTriangleSoup (n)
-	--
-end
-
-
-
-
-
-
-
-
-
-
--- Standard library imports --
-local assert = assert
-local unpack = unpack
-
--- Unique keys --
-local _above = {}
-local _above_flag = {}
-local _base_offset = {}
-local _cur_column = {}
-local _index_shape_count = {}
-local _indices = {}
-local _left_flag = {}
-local _lower_left = {}
-local _lower_right = {}
-local _max_index = {}
-local _ncols = {}
-local _offset = {}
-local _shape = {}
-local _upper_left = {}
-local _upper_right = {}
-
--- Exports --
-local MM = {}
-
---
---
---
 
 local MeshBuilder = {}
 
@@ -603,63 +462,14 @@ local function NewBuilder (ncols)
 end
 
 --- DOCME
-function MM.NewLatticeBuilder (ncols)
+function M.NewLatticeBuilder (ncols)
 	assert(ncols and ncols > 0, "Invalid column count")
 
 	return NewBuilder(ncols)
 end
 
 --- DOCME
-MM.NewSequenceBuilder = NewBuilder
-
-M._MM = MM
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+M.NewSequenceBuilder = NewBuilder
 
 _AddQuadIndices_ = M.AddQuadIndices
 _AddTriangleIndices_ = M.AddTriangleIndices
