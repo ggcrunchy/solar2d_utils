@@ -229,12 +229,12 @@ local MeshBuilder = {}
 
 MeshBuilder.__index = MeshBuilder
 
---- DOCME
+--- Manually clear the "above" flag.
 function MeshBuilder:ClearAboveFlag ()
 	self[_above_flag] = nil
 end
 
---- DOCME
+--- Manually clear the "left" flag.
 function MeshBuilder:ClearLeftFlag ()
 	self[_left_flag] = nil
 end
@@ -477,8 +477,11 @@ function MeshBuilder:GetLastIndices (how)
 		end
 	elseif shape == "tri" then
 		count = 3
-	elseif shape == "bottom_edge" then
-		-- TODO!
+	elseif shape == "bottom_edge" then -- cf. PrepareToAdvance() and EmitBottomEdge() method
+		local prev = self[_cur_column] - 1
+		local above, col = self[_above], prev > 0 and prev or self[_ncols]
+
+		return -above[col], above[-col]
 	else
 		count = self[_index_shape_count] -- cf. note in FinishIndexShape() method
 	end
@@ -495,6 +498,11 @@ function MeshBuilder:GetLastShape ()
 	else
 		return shape
 	end
+end
+
+--- DOCME
+function MeshBuilder:GetMaxIndex ()
+	return self[_max_index]
 end
 
 --- DOCME
