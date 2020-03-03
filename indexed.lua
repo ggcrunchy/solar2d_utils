@@ -84,48 +84,48 @@ function M.AddTriangleIndices (indices, i1, i2, i3, base)
 	indices[base + 3] = i3
 end
 
-local MeshBuilder = {}
+local Builder = {}
 
-MeshBuilder.__index = MeshBuilder
+Builder.__index = Builder
 
 --- Manually clear the "above" flag.
-function MeshBuilder:ClearAboveFlag ()
+function Builder:ClearAboveFlag ()
 	self[_above_flag] = nil
 end
 
 --- Manually clear the "left" flag.
-function MeshBuilder:ClearLeftFlag ()
+function Builder:ClearLeftFlag ()
 	self[_left_flag] = nil
 end
 
-local function GetIndices (MB)
-	local indices = MB[_indices] or {} -- if first emission, might not have indices
+local function GetIndices (B)
+	local indices = B[_indices] or {} -- if first emission, might not have indices
 
-	MB[_indices] = indices
+	B[_indices] = indices
 
 	return indices
 end
 
-local function NewIndex (MB)
-	local max_index = MB[_max_index] + 1
+local function NewIndex (B)
+	local max_index = B[_max_index] + 1
 
-	MB[_max_index] = max_index
+	B[_max_index] = max_index
 
 	return max_index
 end
 
-local function PrepareToAdvance (MB, ul_offset, ur_index)
-	MB:ClearAboveFlag()
-	MB:ClearLeftFlag()
-	MB:SetUpperLeft(nil)
-	MB:SetUpperRight(nil)
-	MB:SetLowerLeft(nil)
-	MB:SetLowerRight(nil)
+local function PrepareToAdvance (B, ul_offset, ur_index)
+	B:ClearAboveFlag()
+	B:ClearLeftFlag()
+	B:SetUpperLeft(nil)
+	B:SetUpperRight(nil)
+	B:SetLowerLeft(nil)
+	B:SetLowerRight(nil)
 
-	local col = MB[_cur_column]
+	local col = B[_cur_column]
 
 	if col then
-		local above, ncols = MB[_above], MB[_ncols]
+		local above, ncols = B[_above], B[_ncols]
 
 		if ur_index then -- is this a bottom edge?
 			ul_offset, above[-col] = -ul_offset, ur_index -- indicate explicit index
@@ -140,7 +140,7 @@ local function PrepareToAdvance (MB, ul_offset, ur_index)
 		ul_offset = above[ncols] ~= "first_row" and above[col + 1] -- cf. ResetMethod()
 
 		if ul_offset then
-			local indices, ul, ur = MB[_indices]
+			local indices, ul, ur = B[_indices]
 
 			if ul_offset < 0 then -- explicit index?
 				ul, ur = -ul_offset, above[-(col + 1)]
@@ -148,25 +148,25 @@ local function PrepareToAdvance (MB, ul_offset, ur_index)
 				ul, ur = indices[ul_offset], indices[ul_offset + 1]
 			end
 
-			MB:SetAboveFlag()
-			MB:SetUpperLeft(ul)
-			MB:SetUpperRight(ur)
+			B:SetAboveFlag()
+			B:SetUpperLeft(ul)
+			B:SetUpperRight(ur)
 		end
 
-		MB[_cur_column] = col + 1
+		B[_cur_column] = col + 1
 	end
 
 	return col == 0 and "newline"
 end
 
-local function SetNonIndexShape (MB, shape)
-	assert(MB[_shape] ~= "indices", "Index shape in progress")
+local function SetNonIndexShape (B, shape)
+	assert(B[_shape] ~= "indices", "Index shape in progress")
 
-	MB[_index_shape_count], MB[_shape] = 0, shape
+	B[_index_shape_count], B[_shape] = 0, shape
 end
 
 --- DOCME
-function MeshBuilder:EmitBottomEdge ()
+function Builder:EmitBottomEdge ()
 	SetNonIndexShape(self, "bottom_edge")
 
 	local ll = self[_lower_left] or NewIndex(self)
@@ -178,63 +178,63 @@ function MeshBuilder:EmitBottomEdge ()
 	end
 end
 
-local function AuxEmitIndex (MB, index)
-	local indices, offset = GetIndices(MB), MB[_offset]
+local function AuxEmitIndex (B, index)
+	local indices, offset = GetIndices(B), B[_offset]
 
-	indices[offset + 1] = index or NewIndex(MB)
+	indices[offset + 1] = index or NewIndex(B)
 
-	MB[_index_shape_count], MB[_offset], MB[_shape] = MB[_index_shape_count] + 1, offset + 1, "indices"
+	B[_index_shape_count], B[_offset], B[_shape] = B[_index_shape_count] + 1, offset + 1, "indices"
 end
 
-local function DegenerateIndex (MB)
-	local indices, offset = GetIndices(MB), MB[_offset]
+local function DegenerateIndex (B)
+	local indices, offset = GetIndices(B), B[_offset]
 
-	if offset ~= MB[_base_offset] then -- any index available?
+	if offset ~= B[_base_offset] then -- any index available?
 		return indices[offset]
 	else -- no: make a dummy and refer to it
-		local index = NewIndex(MB)
+		local index = NewIndex(B)
 
-		indices[offset + 1], MB[_offset] = index, offset + 1
+		indices[offset + 1], B[_offset] = index, offset + 1
 
 		return index
 	end
 end
 
 --- DOCME
-function MeshBuilder:EmitDegenerateIndex ()
+function Builder:EmitDegenerateIndex ()
 	AuxEmitIndex(self, DegenerateIndex(self))
 end
 
-local function SetDegenerateIndices (MB)
-	local index = DegenerateIndex(MB)
+local function SetDegenerateIndices (B)
+	local index = DegenerateIndex(B)
 
-	MB:SetUpperLeft(index)
-	MB:SetUpperRight(index)
-	MB:SetLowerLeft(index)
-	MB:SetUpperRight(index)
+	B:SetUpperLeft(index)
+	B:SetUpperRight(index)
+	B:SetLowerLeft(index)
+	B:SetUpperRight(index)
 end
 
 --- DOCME
-function MeshBuilder:EmitDegenerateQuad ()
+function Builder:EmitDegenerateQuad ()
 	SetDegenerateIndices(self)
 
 	self:EmitQuad()
 end
 
 --- DOCME
-function MeshBuilder:EmitDegenerateTriangle ()
+function Builder:EmitDegenerateTriangle ()
 	SetDegenerateIndices(self)
 
 	self:EmitTriangle()
 end
 
 --- DOCME
-function MeshBuilder:EmitIndex (index)
+function Builder:EmitIndex (index)
 	AuxEmitIndex(self, index)
 end
 
 --- DOCME
-function MeshBuilder:EmitQuad ()
+function Builder:EmitQuad ()
 	SetNonIndexShape(self, "quad")
 
 	local indices, offset = GetIndices(self), self[_offset]
@@ -255,7 +255,7 @@ function MeshBuilder:EmitQuad ()
 end
 
 --- DOCME
-function MeshBuilder:EmitTriangle ()
+function Builder:EmitTriangle ()
 	SetNonIndexShape(self, "tri")
 
 	local above_flag, left_flag, i1, i2, i3 = self[_above_flag], self[_left_flag]
@@ -314,7 +314,7 @@ function MeshBuilder:EmitTriangle ()
 end
 
 --- DOCME
-function MeshBuilder:FinishIndexShape ()
+function Builder:FinishIndexShape ()
 	local shape = self[_shape]
 
 	assert(shape == "indices", "Index shape not in progress")
@@ -325,7 +325,7 @@ function MeshBuilder:FinishIndexShape ()
 end
 
 --- DOCME
-function MeshBuilder:GetLastIndices (how)
+function Builder:GetLastIndices (how)
 	local indices, shape, offset, count = self[_indices], self[_shape], self[_offset]
 
 	if shape == "quad" then
@@ -349,7 +349,7 @@ function MeshBuilder:GetLastIndices (how)
 end
 
 --- DOCME
-function MeshBuilder:GetLastShape ()
+function Builder:GetLastShape ()
 	local shape = self[_shape]
 
 	if shape == "indices" then
@@ -360,12 +360,12 @@ function MeshBuilder:GetLastShape ()
 end
 
 --- DOCME
-function MeshBuilder:GetMaxIndex ()
+function Builder:GetMaxIndex ()
 	return self[_max_index]
 end
 
 --- DOCME
-function MeshBuilder:GetResult ()
+function Builder:GetResult ()
 	local out, offset = self[_indices], self[_offset]
 
 	self:Reset() -- n.b. offset stays intact
@@ -378,7 +378,7 @@ function MeshBuilder:GetResult ()
 end
 
 --- DOCME
-function MeshBuilder:Reset (max_index)
+function Builder:Reset (max_index)
 	self[_upper_left], self[_upper_right], self[_lower_left], self[_lower_right] = nil
 	self[_above_flag], self[_left_flag], self[_indices] = nil
 	self[_index_shape_count], self[_max_index] = 0, max_index or 0
@@ -392,73 +392,73 @@ function MeshBuilder:Reset (max_index)
 end
 
 --- DOCME
-function MeshBuilder:SetAboveFlag ()
+function Builder:SetAboveFlag ()
 	self[_above_flag] = true
 end
 
 --- DOCME
-function MeshBuilder:SetIndices (indices)
+function Builder:SetIndices (indices)
 	assert(self[_offset] == self[_base_offset], "Building in progress")
 
 	self[_indices] = indices
 end
 
 --- DOCME
-function MeshBuilder:SetLeftFlag ()
+function Builder:SetLeftFlag ()
 	self[_left_flag] = true
 end
 
 --- DOCME
-function MeshBuilder:SetLowerLeft (index)
+function Builder:SetLowerLeft (index)
 	self[_lower_left] = index
 end
 
 --- DOCME
-function MeshBuilder:SetLowerRight (index)
+function Builder:SetLowerRight (index)
 	self[_lower_right] = index
 end
 
 --- DOCME
-function MeshBuilder:SetMaxIndex (max_index)
+function Builder:SetMaxIndex (max_index)
 	assert(self[_offset] == self[_base_offset], "Building in progress")
 
 	self[_max_index] = max_index or 0
 end
 
 --- DOCME
-function MeshBuilder:SetOffset (offset)
+function Builder:SetOffset (offset)
 	assert(self[_offset] == self[_base_offset], "Building in progress")
 
 	self[_offset] = offset or 0
 end
 
 --- DOCME
-function MeshBuilder:SetUpperLeft (index)
+function Builder:SetUpperLeft (index)
 	self[_upper_left] = index
 end
 
 --- DOCME
-function MeshBuilder:SetUpperRight (index)
+function Builder:SetUpperRight (index)
 	self[_upper_right] = index
 end
 
 --- DOCME
-function MeshBuilder:Skip ()
+function Builder:Skip ()
 	PrepareToAdvance(self, nil)
 
 	self[_shape], self[_index_shape_count] = "none", 0
 end
 
 local function NewBuilder (ncols)
-	local mb = setmetatable({ [_base_offset] = 0 }, MeshBuilder)
+	local builder = setmetatable({ [_base_offset] = 0 }, Builder)
 
 	if ncols then
-		mb[_above], mb[_ncols] = {}, ncols
+		builder[_above], builder[_ncols] = {}, ncols
 	end
 
-	mb:Reset()
+	builder:Reset()
 
-	return mb
+	return builder
 end
 
 --- DOCME
