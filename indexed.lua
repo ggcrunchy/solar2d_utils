@@ -306,9 +306,9 @@ function Builder:EmitTriangle ()
 		if above_flag then -- i2 = ur, i3 = lr
 			self:SetUpperLeft(i2) -- n.b. often redundant
 			self:SetLowerLeft(i3)
-		else -- i2 = ll, i3 = ur
+		else -- i1 = lr, i3 = ur
 			self:SetUpperLeft(i3) -- n.b. often redundant
-			self:SetLowerLeft(i2)
+			self:SetLowerLeft(i1)
 		end
 	end
 end
