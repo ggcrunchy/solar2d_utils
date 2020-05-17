@@ -349,6 +349,11 @@ function Builder:GetLastIndices (how)
 end
 
 --- DOCME
+function Builder:GetColumnCount ()
+	return self[_ncols]
+end
+
+--- DOCME
 function Builder:GetLastShape ()
 	local shape = self[_shape]
 
