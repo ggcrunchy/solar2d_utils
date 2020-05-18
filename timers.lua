@@ -36,7 +36,7 @@ local yield = coroutine.yield
 -- Cookies --
 local _get_func = {}
 
--- Corona globals --
+-- Solar2D globals --
 local display = display
 local timer = timer
 

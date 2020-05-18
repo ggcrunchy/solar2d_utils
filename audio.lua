@@ -41,7 +41,7 @@ local indexOf = table.indexOf
 local array_funcs = require("tektite_core.array.funcs")
 local file = require("solar2d_utils.file")
 
--- Corona globals --
+-- Solar2D globals --
 local audio = audio
 local system = system
 local timer = timer

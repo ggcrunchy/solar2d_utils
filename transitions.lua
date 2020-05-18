@@ -35,7 +35,7 @@ local yield = coroutine.yield
 local flow = require("coroutine_ops.flow")
 local meta = require("tektite_core.table.meta")
 
--- Corona globals --
+-- Solar2D globals --
 local transition = transition
 
 -- Cached module references --

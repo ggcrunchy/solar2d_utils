@@ -31,11 +31,11 @@ local pairs = pairs
 local args = require("iterator_ops.args")
 local visibility = require("solar2d_utils.visibility")
 
--- Corona globals --
+-- Solar2D globals --
 local display = display
 local Runtime = Runtime
 
--- Corona modules --
+-- Solar2D modules --
 local physics = require("physics")
 
 -- Plugins --

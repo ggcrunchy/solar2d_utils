@@ -42,7 +42,7 @@ local frames = require("solar2d_utils.frames")
 local lazy = require("tektite_core.table.lazy")
 local meta = require("tektite_core.table.meta")
 
--- Corona globals --
+-- Solar2D globals --
 local Runtime = Runtime
 local system = system
 

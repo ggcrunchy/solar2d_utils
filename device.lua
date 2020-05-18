@@ -29,7 +29,7 @@ local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
 
--- Corona globals --
+-- Solar2D globals --
 local Runtime = Runtime
 local system = system
 

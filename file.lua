@@ -35,12 +35,12 @@ local type = type
 -- Modules --
 local strings = require("tektite_core.var.strings")
 
--- Corona globals --
+-- Solar2D globals --
 local display = display
 local system = system
 local timer = timer
 
--- Corona modules --
+-- Solar2D modules --
 local lfs = require("lfs")
 
 -- Cached module references --
@@ -76,7 +76,7 @@ if OnSimulator then
 	end
 end
 
---- Choose a Corona base directory for a file. If the file is found under the "preferred"
+--- Choose a Solar2D base directory for a file. If the file is found under the "preferred"
 -- directory, that one is used; otherwise, **system.ResourceDirectory** is used (**n.b.** the
 -- file may or may not exist, in this case).
 --

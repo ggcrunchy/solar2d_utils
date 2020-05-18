@@ -26,7 +26,7 @@
 -- Standard library imports --
 local pairs = pairs
 
--- Corona globals --
+-- Solar2D globals --
 local display = display
 
 -- Cached module references --

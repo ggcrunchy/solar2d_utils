@@ -31,11 +31,11 @@ local tostring = tostring
 -- Modules --
 local pconfig = require("config.Persistence")
 
--- Corona globals --
+-- Solar2D globals --
 local Runtime = Runtime
 local system = system
 
--- Corona modules --
+-- Solar2D modules --
 local json = require("json")
 --local sqlite3 = require("sqlite3")
 
