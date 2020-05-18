@@ -38,7 +38,7 @@ local type = type
 
 -- Modules --
 local adaptive = require("tektite_core.table.adaptive")
-local frames = require("corona_utils.frames")
+local frames = require("solar2d_utils.frames")
 local lazy = require("tektite_core.table.lazy")
 local meta = require("tektite_core.table.meta")
 

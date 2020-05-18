@@ -39,7 +39,7 @@ local indexOf = table.indexOf
 
 -- Modules --
 local array_funcs = require("tektite_core.array.funcs")
-local file = require("corona_utils.file")
+local file = require("solar2d_utils.file")
 
 -- Corona globals --
 local audio = audio

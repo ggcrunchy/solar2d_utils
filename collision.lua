@@ -29,7 +29,7 @@ local pairs = pairs
 
 -- Modules --
 local args = require("iterator_ops.args")
-local visibility = require("corona_utils.visibility")
+local visibility = require("solar2d_utils.visibility")
 
 -- Corona globals --
 local display = display

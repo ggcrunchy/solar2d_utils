@@ -28,7 +28,7 @@ local pairs = pairs
 
 -- Modules --
 local common = require("s3_editor.Common") -- urgh...
-local linkage_utils = require("corona_utils.linkage.utils")
+local linkage_utils = require("solar2d_utils.linkage.utils")
 local table_funcs = require("tektite_core.table.funcs")
 
 -- Exports --
