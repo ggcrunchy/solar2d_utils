@@ -37,7 +37,6 @@ local yield = coroutine.yield
 local _get_func = {}
 
 -- Solar2D globals --
-local display = display
 local timer = timer
 
 -- Cached module references --
@@ -80,56 +79,6 @@ function M.PerformWithDelayFromExample (delay, handle, iterations)
 	else
 		return timer.performWithDelay(delay, listener, iterations)
 	end
-end
-
-local DeferFuncs = {
-	activate = function(object)
-		object.isBodyActive = true
-	end,
-
-	deactivate = function(object)
-		object.isBodyActive = false
-	end,
-
-	remove = function(object)
-		object:removeSelf()
-	end,
-
-	stop = function(object)
-		object:setLinearVelocity(0, 0)
-	end,
-
-	stop_and_deactivate = function(object)
-		object.isBodyActive = false
-
-		object:setLinearVelocity(0, 0)
-	end
-}
-
---- Perform an action on an object with a 0-frame delay, i.e. soon but not immediately.
---
--- The motivation is that _object_ and / or some associated state might still be in use, for
--- instance until a callback finishes, yet that point in the code is convenient / natural.
--- @callable func Called as `func(object, event)` after the delay, with _event_ as per **timer.performWithDelay**.
---
--- Alternatively, a string corresponding to a built-in behavior:
---
--- * **"activate"**: `object.isBodyActive = true`.
--- * **"deactivate"**: `object.isBodyActive = false`.
--- * **"remove"**: `object:removeSelf()`.
--- * **"stop"**: `object:setLinearVelocity(0, 0)`.
--- * **"stop\_and\_deactivate"**: Combination of **"stop"** and **"deactivate"**.
--- @pobject object Acted-on object. If **removeSelf** has been called on _object_ before
--- the timer goes off, _func_ will never be called.
--- @treturn TimerHandle Handle.
-function M.WithObjectDefer (object, func)
-	func = DeferFuncs[func] or func
-
-	return timer.performWithDelay(0, function(event)
-		if display.isValid(object) then
-			func(object, event)
-		end
-	end)
 end
 
 local function DefError (err, _) error(err) end

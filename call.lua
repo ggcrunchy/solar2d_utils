@@ -25,6 +25,7 @@
 
 -- Standard library imports --
 local assert = assert
+local pairs = pairs
 local rawequal = rawequal
 local remove = table.remove
 local setmetatable = setmetatable
@@ -76,6 +77,13 @@ function M.AtLimit ()
 	return Count == Limit
 end
 
+local CallEvent = {}
+
+--- DOCME
+function M.BindNamedArgument (name, arg)
+	CallEvent[name] = arg
+end
+
 --- DOCME
 function M.DispatchOrHandleEvent (object, event, def)
 	local target, result = _GetRedirectTarget_(object)
@@ -105,35 +113,11 @@ function M.DispatchOrHandleEvent (object, event, def)
 	return result
 end
 
-local CallEvent = {}
-
 --- DOCME
 function M.DispatchOrHandleNamedEvent (name, object, def)
 	CallEvent.name = name
 
 	return _DispatchOrHandleEvent_(object, CallEvent, def)
-end
-
---- DOCME
-function M.DispatchOrHandleNamedEvent_NamedArg (name, object, arg_name, arg, def)
-	CallEvent.name, CallEvent[arg_name] = name, arg
-
-	local result = _DispatchOrHandleEvent_(object, CallEvent, def)
-
-	CallEvent[arg_name] = nil
-
-	return result
-end
-
---- DOCME
-function M.DispatchOrHandleNamedEvent_NamedArgPair (name, object, arg_name1, arg1, arg_name2, arg2, def)
-	CallEvent.name, CallEvent[arg_name1], CallEvent[arg_name2] = name, arg1, arg2
-
-	local result = _DispatchOrHandleEvent_(object, CallEvent, def)
-
-	CallEvent[arg_name1], CallEvent[arg_name2] = nil
-
-	return result
 end
 
 local Redirects = meta.WeakKeyed()
@@ -312,6 +296,13 @@ function M.SetActionLimit (limit)
 	assert(type(limit) == "number" and limit > 0, "Invalid limit")
 
 	Limit = limit
+end
+
+--- DOCME
+function M.UnbindArguments ()
+	for k in pairs(CallEvent) do
+		CallEvent[k] = nil
+	end
 end
 
 _DispatchOrHandleEvent_ = M.DispatchOrHandleEvent

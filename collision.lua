@@ -51,6 +51,45 @@ local M = {}
 --
 --
 
+local Deferred = {}
+
+local function Resolve ()
+	for i = 1, #Deferred, 3 do
+		local object1, object2 = Deferred[i + 1], Deferred[i + 2]
+
+		if display.isValid(object1) and (not object2 or display.isValid(object2)) then
+			Deferred[i](object1, object2)
+		end
+	end
+
+	for i = #Deferred, 1, -1 do
+		Deferred[i] = nil
+	end
+
+	Runtime:removeEventListener("lateUpdate", Resolve)
+end
+
+local function Defer (func, object1, object2)
+	local n = #Deferred
+
+	if n == 0 then
+		Runtime:addEventListener("lateUpdate", Resolve)
+	end
+
+	Deferred[n + 1], Deferred[n + 2], Deferred[n + 3] = func, object1, object2 or false
+end
+
+local function MakeDeferred (func)
+	return function(object)
+		Defer(func, object)
+	end
+end
+
+--- DOCME
+M.ActivateLater = MakeDeferred(function(object)
+	object.isBodyActive = true
+end)
+
 local Handlers = {}
 
 --- Define a collision handler for objects of a given collision type with other objects.
@@ -66,17 +105,17 @@ function M.AddHandler (type, func)
 	Handlers[type] = func
 end
 
-local Mask = 0x1
+--- DOCME
+M.DeactivateLater = MakeDeferred(function(object)
+	object.isBodyActive = false
+end)
 
-local NamedFlags = setmetatable({}, {
-	__index = function(t, k)
-		assert(Mask < 0xFFFF, "Limit of 16 named flags")
+--- DOCME
+M.DoLater = Defer
 
-		t[k], Mask = Mask, 2 * Mask
+local NewMask = 0x1
 
-		return t[k]
-	end
-})
+local NamedMasks = {}
 
 --- Convenience routine used to build bitmasks for **categoryBits** and **maskBits** filter
 -- fields, using friendly names instead of magic numbers.
@@ -93,7 +132,16 @@ function M.FilterBits (...)
 
 	for _, name in args.Args(...) do
 		if name ~= nil then
-			bits = bit.bor(bits, NamedFlags[name])
+			local mask = NamedMasks[name]
+
+			if not mask then
+				assert(NewMask < 0xFFFF, "Limit of 16 named flags")
+
+				mask, NewMask = NewMask, 2 * NewMask
+				NamedMasks[name] = mask
+			end
+
+			bits = bit.bor(bits, mask)
 		end
 	end
 
@@ -126,6 +174,11 @@ end
 function M.RemoveBody (object)
 	return _GetType_(object) ~= nil and physics.removeBody(object)
 end
+
+--- DOCME
+M.StopLater = MakeDeferred(function(object)
+	object:setLinearVelocity(0, 0)
+end)
 
 --- Associate a collision type with _object_. This is used to choose _object_'s handler in
 -- the event of a collision, and will also be provided (as a convenience) to the other
