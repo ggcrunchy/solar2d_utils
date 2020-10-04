@@ -25,25 +25,23 @@
 
 -- Standard library imports --
 local assert = assert
+local min = math.min
 local pairs = pairs
-local rawequal = rawequal
+local print = print
 local remove = table.remove
 local setmetatable = setmetatable
 local type = type
 
 -- Modules --
-local frames = require("solar2d_utils.frames")
 local meta = require("tektite_core.table.meta")
 
--- Solar2D globals --
-local Runtime = Runtime
-local system = system
-
 -- Cached module references --
+local _Add_
+local _Check_
 local _DispatchOrHandleEvent_
 local _GetRedirectTarget_
-local _IterateCallList_
-local _MakePerObjectCallList_
+local _IterateList_
+local _MakePerObjectList_
 
 -- Exports --
 local M = {}
@@ -52,29 +50,15 @@ local M = {}
 --
 --
 
-local Count, Limit = 0
-
-local TryToResetCount = frames.OnFirstCallInFrame(function()
-	Count = 0
-end)
+local AddNonce
 
 --- DOCME
--- @uint n
-function M.AddCalls (n)
-	TryToResetCount()
-
-	local count = Count + n
-
-	assert(Limit, "Calls require a limit")
-	assert(count <= Limit, "Too many calls")
-
-	Count = count
-end
-
---- DOCME
--- @treturn boolean B
-function M.AtLimit ()
-	return Count == Limit
+function M.Add (list, n)
+	if list then
+		return list(AddNonce, n)
+	else
+		return n
+	end
 end
 
 local CallEvent = {}
@@ -82,6 +66,17 @@ local CallEvent = {}
 --- DOCME
 function M.BindNamedArgument (name, arg)
 	CallEvent[name] = arg
+end
+
+local CheckNonce
+
+--- DOCME
+function M.Check (list, n)
+	if list then
+		return list(CheckNonce, n)
+	else
+		return 0
+	end
 end
 
 --- DOCME
@@ -127,75 +122,65 @@ function M.GetRedirectTarget (func)
 	return Redirects[func]
 end
 
-local BoxNonce = Redirects -- use arbitrary internal object as nonce
+local ActionNonce, IndexNonce
 
--- List iterator body
 local function AuxList (list, index)
-	if not index then
-		if list and (not Limit or Count < Limit) then
-			return 0, list(BoxNonce, "get")
+	if not index then -- simple function?
+		local func = list and list(ActionNonce, "get")
+
+		if func then
+			return 0, func -- n.b. next iteration will try (and fail) compound branch
 		end
-	elseif index > 0 then
-		return index - 1, list("i", index)
+	else
+		local func = list(IndexNonce, index + 1)
+
+		if func then -- compound function and within bounds?
+			return index + 1, func
+		end
 	end
 end
 
 --- DOCME
 -- @treturn iterator X
-function M.IterateCallList (list)
-	return AuxList, list, list and list("n")
-end
-
-local Tally, LastReported, OnTooManyEvent = 0, 0
-
-local function TryToReport ()
-	local now = system.getTimer()
-
-	Tally = Tally + 1
-
-	if now - LastReported >= 3000 then -- throttle the reports
-		OnTooManyEvent = OnTooManyEvent or {}
-		OnTooManyEvent.name, OnTooManyEvent.tally = "too_many_actions", Tally
-
-		Runtime:dispatchEvent(OnTooManyEvent)
-
-		LastReported, Tally = now, 0
-	end	
-end
-
-local function AdjustN (n)
-	if Limit and Count + n > Limit then
-		return Limit - Count
-	else
-		return n
-	end
+function M.IterateList (list)
+	return AuxList, list, list and list(IndexNonce)
 end
 
 local BoxesStash = {}
 
-local function Box (func)
+local Specials = {}
+
+local function Box (func, env)
 	local box = remove(BoxesStash)
 
 	if box then
-		box(BoxNonce, func)
+		box(ActionNonce, func, env)
 	else
-		function box (arg1, arg2)
-			if rawequal(arg1, BoxNonce) then
-				if arg2 == "get" then
-					return func
-				elseif arg2 == "extract" then
-					arg2, func = func
+		function box (k, a, b)
+			local special = Specials[k]
 
-					return arg2
+			if not special then
+				if env("add", 1) ~= 0 then
+					func()
+
+					return true
 				else
-					func = arg2 -- N.B. captured at first, thus only need this on reuse
+					env("report", 0, 1)
+
+					return false, 0
 				end
-			elseif arg1 ~= "i" and arg1 ~= "n" then
-				if AdjustN(1) == 0 then
-					return TryToReport()
+			elseif special == "action" then
+				if a == "get" then
+					return func
+				elseif a == "extract" then
+					a, b, func, env = func, env
+
+					return a, b
 				else
-					return func()
+					func, env = a, b -- N.B. captured at first, thus only need this on reuse
 				end
+			elseif special ~= "index" and a > 0 then -- a: count
+				return env(special, 1)
 			end
 		end
 	end
@@ -203,44 +188,89 @@ local function Box (func)
 	return box
 end
 
+local Environments = meta.WeakKeyed()
+
+local NilKey
+
+local function DefEnv (what, n, expected)
+	if what == "add" then
+		return n
+	elseif what == "count" then
+		return 0, 1 / 0
+	else
+		print("Expected to make " .. expected .. " calls but only did " .. n)
+	end
+end
+
+local function MaybeNil (name)
+	if name == nil then
+		return NilKey
+	else
+		return name
+	end
+end
+
+-- Arbitrarily assign internal objects as nonces.
+NilKey = Specials
+ActionNonce = CallEvent
+AddNonce = Redirects
+CheckNonce = DefEnv
+IndexNonce = MaybeNil
+
+Specials[ActionNonce] = "action"
+Specials[AddNonce] = "add"
+Specials[CheckNonce] = "check"
+Specials[IndexNonce] = "index"
+
 --- DOCME
+-- @param[opt] name
 -- @treturn function A
 -- @treturn table T
-function M.MakePerObjectCallList ()
-	local object_to_list, list = meta.WeakKeyed()
+function M.MakePerObjectList (name)
+	local env, object_to_list, list = Environments[MaybeNil(name)] or DefEnv, meta.WeakKeyed()
 
 	return function(func, object)
 		local curf = object_to_list[object]
 
 		if curf then -- not the very first function?
 			if not list then -- second function?
-				list, BoxesStash[#BoxesStash + 1] = { curf(BoxNonce, "extract") }, curf
+				local func = curf(ActionNonce, "extract") -- throw away environment
 
-				object_to_list[object] = function(arg1, arg2)
-					if arg1 == "i" then
-						return list[arg2]
-					end
+				list, BoxesStash[#BoxesStash + 1] = { func }, curf
 
-					local expected_n = #list
-					local n = AdjustN(expected_n)
+				object_to_list[object] = function(k, arg)
+					local special = Specials[k]
 
-					if arg1 == "n" then
-						return n
-					end
+					if not special then
+						local expected_n = #list
+						local n = env("add", expected_n)
 
-					for i = 1, n do
-						list[i]()
-					end
+						for i = 1, n do
+							list[i]()
+						end
 
-					if n < expected_n then
-						TryToReport()
+						if n == expected_n then
+							return true
+						else
+							env("report", n, expected_n)
+
+							return false, n
+						end
+					elseif special == "index" then -- arg: index?
+						if arg then
+							return list[arg]
+						else
+							return 0
+						end
+					else -- arg: count
+						return env(special, min(arg, #list))
 					end
 				end
 			end
 
 			list[#list + 1] = func
 		else -- first one
-			object_to_list[object] = Box(func)
+			object_to_list[object] = Box(func, env)
 		end
 	end, object_to_list
 end
@@ -250,6 +280,34 @@ local Dispatcher = {}
 Dispatcher.__index = Dispatcher
 
 --- DOCME
+-- @param object
+-- @uint n
+-- @treturn uint X
+function Dispatcher:AddForObject (object, n)
+	return _Add_(self.m_object_to_list[object], n)
+end
+
+--- DOCME
+-- @param object
+-- @uint n
+-- @treturn uint X
+function Dispatcher:CheckForObject (object, n)
+	return _Check_(self.m_object_to_list[object], n)
+end
+
+--- DOCME
+-- @param object
+function Dispatcher:DispatchForObject (object)
+    local func = self.m_object_to_list[object]
+
+    if func then
+        return func()
+	else
+		return true
+    end
+end
+
+--- DOCME
 -- @treturn function A
 function Dispatcher:GetAdder ()
     return self.m_add_to_list
@@ -257,28 +315,18 @@ end
 
 --- DOCME
 -- @param object
--- @param ...
-function Dispatcher:DispatchForObject (object, ...)
-    local func = self.m_object_to_list[object]
-
-    if func then
-        func(...)
-    end
-end
-
---- DOCME
--- @param object
 -- @treturn iterator Y
 function Dispatcher:IterateFunctionsForObject (object)
-    return _IterateCallList_(self.m_object_to_list[object])
+    return _IterateList_(self.m_object_to_list[object])
 end
 
 ---
+-- @param[opt] name
 -- @treturn Dispatcher X
-function M.NewDispatcher ()
+function M.NewDispatcher (name)
     local dispatcher = {}
 
-    dispatcher.m_add_to_list, dispatcher.m_object_to_list = _MakePerObjectCallList_()
+    dispatcher.m_add_to_list, dispatcher.m_object_to_list = _MakePerObjectList_(name)
 
 	return setmetatable(dispatcher, Dispatcher)
 end
@@ -291,11 +339,43 @@ function M.Redirect (func, target)
 end
 
 --- DOCME
--- @uint limit
-function M.SetActionLimit (limit)
-	assert(type(limit) == "number" and limit > 0, "Invalid limit")
+function M.SetEnvironment (params)
+	assert(type(params) == "table", "Non-table `params`")
 
-	Limit = limit
+	local add, count, limit, report = params.add, params.count, params.limit, params.report
+
+	assert(meta.CanCall(add), "Uncallable `add`")
+	assert(meta.CanCall(count), "Uncallable `count`")
+	assert(type(limit) == "number" and limit > 0, "Invalid `limit`")
+	assert(report == nil or meta.CanCall(report), "Uncallable `report`")
+
+	local function env (what, n, expected)
+		if what ~= "report" then
+			local ncalls = count()
+
+			assert(type(ncalls) == "number" and ncalls >= 0 and ncalls <= limit, "`count` must return a non-negative number <= `limit`")
+
+			if what == "count" then
+				return ncalls, limit
+			end
+
+			assert(type(n) == "number" and n >= 0, "Add / check expects a non-negative number")
+
+			if ncalls + n > limit then
+				n = limit - ncalls
+			end
+
+			if n > 0 and what == "add" then
+				add(n)
+			end
+
+			return n
+		elseif report then
+			report(n, expected)
+		end
+	end
+
+	Environments[MaybeNil(params.name)] = env
 end
 
 --- DOCME
@@ -305,9 +385,11 @@ function M.UnbindArguments ()
 	end
 end
 
+_Add_ = M.Add
+_Check_ = M.Check
 _DispatchOrHandleEvent_ = M.DispatchOrHandleEvent
 _GetRedirectTarget_ = M.GetRedirectTarget
-_IterateCallList_ = M.IterateCallList
-_MakePerObjectCallList_ = M.MakePerObjectCallList
+_IterateList_ = M.IterateList
+_MakePerObjectList_ = M.MakePerObjectList
 
 return M

@@ -33,25 +33,7 @@ local M = {}
 --
 --
 
-local Diff
-
-local UpdateTime
-
----
--- @treturn number Difference in time since last frame.
-function M.DiffTime ()
-	UpdateTime()
-
-	return Diff
-end
-
---- Enforces that a function is only called once per frame, e.g. for lazy updates.
--- @callable func One-argument function to be called.
--- @treturn function Wrapper. On the first call in a frame, _func_ is called with the
--- wrapper's argument.
---
--- This wrapper returns **true** on the first call in a frame, **false** otherwise.
-function M.OnFirstCallInFrame (func)
+local function OnFirstCallInFrame (func)
 	local id
 
 	return function(arg)
@@ -68,13 +50,33 @@ function M.OnFirstCallInFrame (func)
 	end
 end
 
+local Diff
+
 local Last
 
-UpdateTime = M.OnFirstCallInFrame(function()
+local UpdateTime = OnFirstCallInFrame(function()
 	local now = Runtime.getFrameStartTime()
 
 	Diff, Last = Last and (now - Last) / 1000 or 0, now
 end)
+
+---
+-- @treturn number Difference in time since last frame.
+function M.DiffTime ()
+	UpdateTime()
+
+	return Diff
+end
+
+--- Enforces that a function is only called once per frame, e.g. for lazy updates.
+-- @callable func One-argument function to be called.
+-- @treturn function Wrapper. On the first call in a frame, _func_ is called with the
+-- wrapper's argument.
+--
+-- This wrapper returns **true** on the first call in a frame, **false** otherwise.
+M.OnFirstCallInFrame = OnFirstCallInFrame
+
+Runtime:addEventListener("lateUpdate", UpdateTime) -- failsafe to keep Last from missing frames
 
 --[[
 Runtime:addEventListener("system", function(event)
