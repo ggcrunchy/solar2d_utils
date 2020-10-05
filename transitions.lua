@@ -32,7 +32,7 @@ local setmetatable = setmetatable
 local yield = coroutine.yield
 
 -- Modules --
-local flow = require("coroutine_ops.flow")
+local coro_flow = require("solar2d_utils.coro_flow")
 local meta = require("tektite_core.table.meta")
 
 -- Solar2D globals --
@@ -157,7 +157,7 @@ function M.DoAndWait (target, params, update)
 	local handle, event1, event2 = AuxDoAndWait(target, params)
 
 	-- Wait for the transition to finish, performing any user-provided update.
-	if not flow.WaitWhile(DoingTransition, update, handle) then
+	if not coro_flow.WaitWhile(DoingTransition, update, handle) then
 		transition.cancel(handle)
 
 		-- Yield to accommodate the cancel listener.
