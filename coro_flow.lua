@@ -1,6 +1,4 @@
---- This module defines some control-flow operations for use inside coroutines.
---
--- @todo Signals terminology needs revision, also too heavyweight
+--- Coroutine-based control flow operations.
 
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -48,7 +46,7 @@ local M = {}
 
 local ShouldNegate, YieldValue
 
---- Body for control-flow operations.
+--- Body for control flow operations.
 --
 -- Once invoked, this will spin on a test / update loop until told to terminate. On each
 -- iteration, if it did not terminate, it will yield.
@@ -68,13 +66,13 @@ local ShouldNegate, YieldValue
 -- @param arg1 Argument #1...
 -- @param arg2 ...#2...
 -- @param arg3 ...and #3.
--- @treturn boolean Operation completed normally, i.e. _done_ resolved true?
+-- @treturn boolean Operation completed normally, i.e. not an early out via _update_?
 -- TODO: above needs some rework
 function M.BasicBody (update, done, arg1, arg2, arg3)
 	assert(meta.CanCall(done), "Uncallable done")
 	assert(update == nil or meta.CanCall(update), "Uncallable update")
 
-	local yvalue, notted = YieldValue, not not ShouldNegate -- coerce to boolean; when true, `not done()` should also be true (likewise for false)
+	local yvalue, notted = YieldValue, not not ShouldNegate -- coerce to boolean: will agree with `not done()` when we pass
 
 	ShouldNegate, YieldValue = nil
 
@@ -106,8 +104,8 @@ end
 local Deduct, Lapse
 
 --- DOCME
--- **N.B.** This calls the lapse function assigned via @{SetTimeLapseFuncs}, if any, so
--- will trigger any side effects.
+-- **N.B.** This simply calls the lapse function, if any, assigned via @{SetTimeLapseFuncs},
+-- so care should be taken if that carries side effects.
 -- @treturn number Lapse
 function M.GetLapse ()
 	if Lapse then
@@ -166,6 +164,13 @@ function M.SetTimeLapseFuncs (lapse, deduct)
 	Lapse, Deduct = lapse, deduct
 end
 
+local UsingTime
+
+--- DOCME
+function M.SetUsingTime ()
+	UsingTime = true
+end
+
 --- DOCME
 function M.SetYieldValue (value)
 	YieldValue = value
@@ -216,9 +221,9 @@ local function NoLapse () return 0 end
 --
 -- @ptable config As per @{BasicBody}, though a **use_time** field is also examined. If this is
 -- true, _done_ accepts the _time\_state_ argument and handles _true\_lapse_ on termination.
--- @param arg1 Argument #1.
--- @param arg2 Argument #2.
--- @param arg3 Argument #3.
+-- @param arg1 Argument #1...
+-- @param arg2 ...#2...
+-- @param arg3 ...and #3.
 -- @treturn boolean Operation concluded normally?
 -- TODO: needs revision
 function M.TimedBody (update, done, arg1, arg2, arg3)
@@ -233,26 +238,24 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 	while true do
 		local lapse = func()
 
-		-- Call the appropriate done logic, depending on whether we care about time, and
-		-- decide whether the body is done (at least by the end of the iteration).
-		IterationTime, IterationLapse = time, lapse
+		IterationTime, IterationLapse = time, lapse -- make available to GetIteration*
 
 		local dresult, spent_finishing = done(arg1, arg2, arg3)
 		local finished = not dresult == notted -- cf. note in BasicBody()
 
-		-- If the done logic worked, the loop is ready to terminate. In this case, find
-		-- out how much time passed on this iteration, erring toward none.
+		-- If the loop is ready to terminate, narrow the lapse to the time actually spent.
+		-- By default, we assume the iteration ended immediately; however, amounts up to
+		-- the current value are allowed (capping anything higher).
         if finished then
             lapse = Clamp(spent_finishing or 0, lapse)
         end
 
-		-- If the loop is not ready to terminate, or it is but it took some time, update
-		-- any user-defined logic with however much time is now available. If there was an
-		-- early exit there, find out how much of this time passed, erring toward all of it.
+		-- Perform any user-defined update, if any time remains on this iteration. If this
+		-- triggers an early out from the loop, we might want to narrow the lapse further.
 		local uresult, spent_updating
 
 		if update ~= nil and lapse > 0 then
-			IterationTime, IterationLapse = time, lapse
+			IterationTime, IterationLapse = time, lapse -- make available to GetIteration*
 
 			uresult, spent_updating = update(arg1, arg2, arg3)
 
@@ -273,121 +276,91 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 	end
 end
 
-do
-	local function AuxWait (duration)
-		local time = _GetIterationTime_()
+local function AuxWait (duration)
+	local time = _GetIterationTime_()
 
-		return time + _GetIterationLapse_() >= duration, duration - time
-	end
-
-	--- Wait for some time to pass.
-	--
-	-- Built on top of @{TimedBody}.
-	-- @number duration Time to wait.
-	-- @tparam ?|callable|nil update Update logic, called as
-	--    update(time_state, duration, arg)
-	-- with _time\_state_ as per @{TimedBody}.
-	--
-	-- If absent, this is a no-op.
-	-- @param arg Argument.
-	-- @treturn boolean The wait completed?
-	function M.Wait (duration, update, arg)
-		return _TimedBody_(update, AuxWait, duration, arg)
-	end
+	return time + _GetIterationLapse_() >= duration, duration - time
 end
 
-do
-	local function Index (t, k)
-		return t[k]
-	end
-
-	--- Wait for a single signal to fire.
-	--
-	-- Built on top of @{BasicBody}.
-	-- @param signals Callable or read-indexable signal object. A signal has fired if
-	-- `signals(what)` or `signals[what]` is true.
-	-- @param what Signal to watch.
-	-- @callable update Optional update logic, called as
-	--    update(signals, what, arg)
-	-- @param arg Argument.
-	-- @treturn boolean The signal fired?
-	function M.WaitForSignal (signals, what, update, arg)
-		return _BasicBody_(update, Index, signals, what, arg)
-	end
-
-	--- Timed variant of @{WaitForSignal}, built on top of @{TimedBody}.
-	-- @param signals Callable or read-indexable signal object.
-	-- @param what Signal to watch.
-	-- @callable update Optional update logic, called as
-	--    update(time_state, signals, what, arg)
-	-- with _time\_state_ as per @{TimedBody}.
-	-- @param arg Argument.
-	-- @treturn boolean The signal fired?
-	function M.WaitForSignal_Timed (signals, what, update, arg)
-		return _TimedBody_(update, Index, signals, what, arg)
-	end
+--- Wait for some time to pass.
+--
+-- Built on top of @{TimedBody}.
+-- @number duration Time to wait.
+-- @tparam ?|callable|nil update Update logic, called as
+--    update(time_state, duration, arg)
+-- with _time\_state_ as per @{TimedBody}.
+--
+-- If absent, this is a no-op.
+-- @param arg Argument.
+-- @treturn boolean The wait completed?
+function M.Wait (duration, update, arg)
+	return _TimedBody_(update, AuxWait, duration, arg)
 end
 
-do
-	local function WaitPair (what, how)
-		local negate = how == "negate"
+local function ChooseBody ()
+	local body = UsingTime and _TimedBody_ or _BasicBody_
 
-		M["Wait" .. what] = function(test, update, arg)
-			ShouldNegate = negate
+	UsingTime = nil
 
-			return _BasicBody_(update, test, arg)
-		end
+	return body
+end
 
-		M["Wait" .. what .. "_Timed"] = function(test, update, arg)
-			ShouldNegate = negate
+local function Index (t, k)
+	return t[k]
+end
 
-			return _TimedBody_(update, test, arg)
-		end
-	end
+--- Wait until `test(arg)` is true.
+-- @callable test Test function, with the same signature as _update_. If it returns
+-- true, the wait terminates.
+-- @tparam ?|callable|nil update Optional update logic, called as
+--    update(arg)
+-- @param arg Argument.
+-- @treturn boolean The test passed?
+-- @see SetUsingTime
+function M.WaitUntil (test, update, arg)
+	return ChooseBody()(update, test, arg)
+end
 
-	--- Wait for a test to pass.
-	--
-	-- Built on top of @{BasicBody}.
-	-- @function WaitUntil
-	-- @callable test Test function, with the same signature as _update_. If it returns
-	-- true, the wait terminates.
-	-- @tparam ?|callable|nil update Optional update logic, called as
-	--    update(arg)
-	-- @param arg Argument.
-	-- @treturn boolean The test passed?
+--- Wait until `object[name]` is true.
+-- @param object
+-- @param name
+-- @callable update Optional update logic, called as
+--    update(object, name, arg)
+-- @param arg Argument.
+-- @treturn boolean The property became true?
+-- @see SetUsingTime
+function M.WaitUntilPropertyTrue (object, name, update, arg)
+	return ChooseBody()(update, Index, object, name, arg)
+end
 
-	--- Timed variant of @{WaitUntil}, built on top of @{TimedBody}.
-	-- @function WaitUntil_Timed
-	-- @callable test Test function. If it returns true, the wait terminates.
-	-- @tparam ?|callable|nil update Optional update logic, called as
-	--    update(time_state, arg)
-	-- with _time\_state_ as per @{TimedBody}.
-	-- @param arg Argument.
-	-- @treturn boolean The test passed?
+--- Wait while `test(arg)` is true.
+-- @callable test Test function, with the same signature as _update_. If it returns
+-- false, the wait terminates.
+-- @tparam ?|callable|nil update Optional update logic, called as
+--    update(arg)
+-- @param arg Argument.
+-- @treturn boolean The test returned false?
+-- @see SetUsingTime
+function M.WaitWhile (test, update, arg)
+	ShouldNegate = true
 
-	WaitPair("Until")
+	return ChooseBody()(update, test, arg)
+end
 
-	--- Wait for a test to fail.
-	--
-	-- Built on top of @{BasicBody}.
-	-- @function WaitWhile
-	-- @callable test Test function, with the same signature as _update_. If it returns
-	-- false, the wait terminates.
-	-- @tparam ?|callable|nil update Optional update logic, called as
-	--    update(arg)
-	-- @param arg Argument.
-	-- @treturn boolean The test failed?
+--- Wait while `object[name]` is true.
+--
+-- Built on top of @{BasicBody}.
+-- @param object
+-- @param name
+-- @callable update Optional update logic, called as
+--    update(object, name, arg)
+-- @param arg Argument.
+-- @treturn boolean The property became false?
+-- @see SetUsingTime
+function M.WaitWhilePropertyTrue (object, name, update, arg)
+	ShouldNegate = true
 
-	--- Timed variant of @{WaitWhile}, built on top of @{TimedBody}.
-	-- @function WaitWhile_Timed
-	-- @callable test Test function. If it returns false, the wait terminates.
-	-- @tparam ?|callable|nil update Optional update logic, called as
-	--    update(time_state, arg)
-	-- with _time\_state_ as per @{TimedBody}.
-	-- @param arg Argument.
-	-- @treturn boolean The test failed?
-
-	WaitPair("While", "negate")
+	return ChooseBody()(update, Index, object, name, arg)
 end
 
 _BasicBody_ = M.BasicBody

@@ -150,7 +150,7 @@ end
 -- @param target Object to transition.
 -- @ptable params Transition parameters, as per `transition.to`.
 -- @callable update Optional update routine, with the transition handle as argument, cf.
--- @{coroutine_ops.flow.WaitWhile}.
+-- @{coro_flow.WaitWhile}.
 --
 -- If the wait is aborted during the update, the transition is cancelled.
 function M.DoAndWait (target, params, update)
