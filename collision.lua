@@ -28,7 +28,6 @@ local assert = assert
 local pairs = pairs
 
 -- Modules --
-local args = require("iterator_ops.args")
 local visibility = require("solar2d_utils.visibility")
 
 -- Solar2D globals --
@@ -117,6 +116,19 @@ local NewMask = 0x1
 
 local NamedMasks = {}
 
+local function AuxGetBitmask (name, new_mask)
+	local mask = NamedMasks[name]
+
+	if not mask or mask < 0 then
+		assert(new_mask < 0xFFFF, "Limit of 16 named flags")
+
+		mask, new_mask = new_mask, 2 * new_mask
+		NamedMasks[name] = -mask -- add provisionally, since we might hit the assert() mid-loop
+	end
+
+	return mask, new_mask
+end
+
 --- Convenience routine used to build bitmasks for **categoryBits** and **maskBits** filter
 -- fields, using friendly names instead of magic numbers.
 --
@@ -127,23 +139,37 @@ local NamedMasks = {}
 -- though there is likely to be some crossover in practice, e.g. for clarity.
 -- @param ... Names of filter bits to combine. Duplicate and **nil** names are ignored.
 -- @treturn uint The boolean union of filter bits, or 0 if none were assigned.
-function M.FilterBits (...)
-	local bits = 0
+-- TODO: revise this!
+function M.GetBitmask (name)
+	local mask, new_mask = AuxGetBitmask(name, NewMask)
 
-	for _, name in args.Args(...) do
-		if name ~= nil then
-			local mask = NamedMasks[name]
+	if new_mask ~= NewMask then
+		NamedMasks[name], NewMask = mask, new_mask
+	end
 
-			if not mask then
-				assert(NewMask < 0xFFFF, "Limit of 16 named flags")
+	return mask
+end
 
-				mask, NewMask = NewMask, 2 * NewMask
-				NamedMasks[name] = mask
-			end
+--- DOCME
+function M.GetCombinedBitmask (names)
+	local bits, new_mask, mask = 0, NewMask
 
-			bits = bit.bor(bits, mask)
+	for i = 1, #names do
+		mask, new_mask = AuxGetBitmask(names[i], new_mask)
+		bits = bit.bor(bits, mask)
+	end
+
+	-- We can now safely repair any new namings and commit `NewMask`.
+	for i = 1, #names do
+		local name = names[i]
+		local mask = NamedMasks[name]
+
+		if mask < 0 then
+			NamedMasks[name] = -mask
 		end
 	end
+
+	NewMask = new_mask
 
 	return bits
 end
