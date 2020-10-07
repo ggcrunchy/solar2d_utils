@@ -29,6 +29,7 @@ local ipairs = ipairs
 local pairs = pairs
 local random = math.random
 local rawequal = rawequal
+local remove = table.remove
 local running = coroutine.running
 local setmetatable = setmetatable
 local tonumber = tonumber
@@ -38,7 +39,6 @@ local type = type
 local indexOf = table.indexOf
 
 -- Modules --
-local array_funcs = require("tektite_core.array.funcs")
 local file = require("solar2d_utils.file")
 
 -- Solar2D globals --
@@ -66,7 +66,8 @@ local function RemoveDeadChannels (channels)
 
 	for i = n, 1, -1 do
 		if not audio.isChannelActive(channels[i]) then
-			array_funcs.Backfill(channels, i)
+			channels[i] = channels[n]
+			n, channels[n] = n - 1
 		end
 	end
 end
@@ -331,7 +332,7 @@ function SoundGroup:Remove ()
 
 		ClearHandles(self.m_handles)
 
-		array_funcs.Backfill(Groups, index)
+		remove(Groups, index)
 	end
 end
 
@@ -501,12 +502,13 @@ local function TaperOut (group, clear) -- TODO: didn't realize there was an audi
 	if #channels > 0 then
 		TaperList = TaperList or {
 			timer = timer.performWithDelay(50, function(event)
-				local n = #TaperList
+				local nlist = #TaperList
 
-				for i = n - 2, 1, -3 do
+				for i = nlist - 2, 1, -3 do
 					local channels, handles, frame = TaperList[i], TaperList[i + 1], TaperList[i + 2] - 1
+					local n = #channels
 
-					for j = #channels, 1, -1 do
+					for j = n, 1, -1 do
 						local channel, volume = channels[j]
 
 						VolumeOpts.channel = channel
@@ -522,12 +524,13 @@ local function TaperOut (group, clear) -- TODO: didn't realize there was an audi
 						audio.setVolume(volume or 1, VolumeOpts) -- restore to 1 if removing
 
 						if not volume then
-							array_funcs.Backfill(channels, j)
+							channels[j] = channels[n]
+							n, channels[n] = n - 1
 						end
 					end
 
 					if #channels == 0 then
-						n = Backfill3(TaperList, i, n)
+						nlist = Backfill3(TaperList, i, nlist)
 
 						if handles then
 							ClearHandles(handles)
@@ -535,7 +538,7 @@ local function TaperOut (group, clear) -- TODO: didn't realize there was an audi
 					end
 				end
 
-				if n == 0 then
+				if nlist == 0 then
 					timer.cancel(event.source)
 
 					TaperList = nil
