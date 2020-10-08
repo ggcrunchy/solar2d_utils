@@ -1,4 +1,9 @@
---- Various call-related building blocks, in particular for objects typically built up from data. 
+--- This module allows functions to be strung together, with the primary aim of building up
+-- potentially complex logic from more manageable parts. 
+--
+-- In particular, this is tailored toward functions honoring an "event" policy.
+--
+-- TODO: this last bit might need some work
 
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -26,7 +31,6 @@
 -- Standard library imports --
 local assert = assert
 local min = math.min
-local pairs = pairs
 local print = print
 local remove = table.remove
 local setmetatable = setmetatable
@@ -38,8 +42,6 @@ local meta = require("tektite_core.table.meta")
 -- Cached module references --
 local _Add_
 local _Check_
-local _DispatchOrHandleEvent_
-local _GetRedirectTarget_
 local _IterateList_
 local _MakePerObjectList_
 
@@ -61,13 +63,6 @@ function M.Add (list, n)
 	end
 end
 
-local CallEvent = {}
-
---- DOCME
-function M.BindNamedArgument (name, arg)
-	CallEvent[name] = arg
-end
-
 local CheckNonce
 
 --- DOCME
@@ -77,49 +72,6 @@ function M.Check (list, n)
 	else
 		return 0
 	end
-end
-
---- DOCME
-function M.DispatchOrHandleEvent (object, event, def)
-	local target, result = _GetRedirectTarget_(object)
-
-	if target ~= nil then
-		object = target
-	end
-
-	if type(object) == "table" then
-		event.result, event.target = def, object
-
-		local dispatch_event = object.dispatchEvent
-
-		if dispatch_event then
-			dispatch_event(object, event)
-		else
-			local handler = object[event.name]
-
-			if handler then
-				handler(event)
-			end
-		end
-
-		result, event.result, event.target = event.result
-	end
-
-	return result
-end
-
---- DOCME
-function M.DispatchOrHandleNamedEvent (name, object, def)
-	CallEvent.name = name
-
-	return _DispatchOrHandleEvent_(object, CallEvent, def)
-end
-
-local Redirects = meta.WeakKeyed()
-
---- DOCME
-function M.GetRedirectTarget (func)
-	return Redirects[func]
 end
 
 local ActionNonce, IndexNonce
@@ -210,10 +162,10 @@ local function MaybeNil (name)
 	end
 end
 
--- Arbitrarily assign internal objects as nonces.
+-- Arbitrarily use internal objects as nonces.
 NilKey = Specials
-ActionNonce = CallEvent
-AddNonce = Redirects
+ActionNonce = BoxesStash
+AddNonce = Environments
 CheckNonce = DefEnv
 IndexNonce = MaybeNil
 
@@ -332,13 +284,6 @@ function M.NewDispatcher (name)
 end
 
 --- DOCME
-function M.Redirect (func, target)
-	assert(not Redirects[func], "Function already redirected")
-
-	Redirects[func] = target
-end
-
---- DOCME
 function M.SetEnvironment (params)
 	assert(type(params) == "table", "Non-table `params`")
 
@@ -378,17 +323,8 @@ function M.SetEnvironment (params)
 	Environments[MaybeNil(params.name)] = env
 end
 
---- DOCME
-function M.UnbindArguments ()
-	for k in pairs(CallEvent) do
-		CallEvent[k] = nil
-	end
-end
-
 _Add_ = M.Add
 _Check_ = M.Check
-_DispatchOrHandleEvent_ = M.DispatchOrHandleEvent
-_GetRedirectTarget_ = M.GetRedirectTarget
 _IterateList_ = M.IterateList
 _MakePerObjectList_ = M.MakePerObjectList
 
