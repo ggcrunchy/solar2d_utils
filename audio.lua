@@ -39,7 +39,7 @@ local type = type
 local indexOf = table.indexOf
 
 -- Modules --
-local file = require("solar2d_utils.file")
+local directories = require("s3_utils.directories")
 
 -- Solar2D globals --
 local audio = audio
@@ -435,9 +435,18 @@ local function AddItem (name, sinfo, prefix, base, info)
 	end
 end
 
---
+local Reserved = { base = true, module = true, path = true }
+
 local function AddToGroup (info, sounds)
-	file.Prefix_WithTableDo(sounds, AddItem, info)
+	local base, path = sounds.base, sounds.path
+
+	path = directories.FromModule(sounds.module, directories.GetNamedPath(path) or path)
+
+	for k, v in pairs(sounds) do
+		if not Reserved[k] then
+			AddItem(k, v, path, base, info)
+		end
+	end
 end
 
 --- Builds a new group of sounds. A group is lazy: unless loaded, it only contains some
