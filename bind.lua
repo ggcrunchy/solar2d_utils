@@ -39,7 +39,7 @@ local type = type
 -- Modules --
 local adaptive = require("tektite_core.table.adaptive")
 local frames = require("solar2d_utils.frames")
-local lazy = require("tektite_core.table.lazy")
+--local lazy = require("tektite_core.table.lazy")
 local meta = require("tektite_core.table.meta")
 
 -- Solar2D globals --
@@ -491,7 +491,7 @@ function M.PrepLink (elem, other, esub, osub)
 end
 
 -- Waiting lists --
-local Deferred = lazy.SubTablesOnDemand()
+local Deferred = {}--lazy.SubTablesOnDemand()
 
 --- Publishes an event. This is intended as a startup process, to provide events to be
 -- picked up by event senders.
