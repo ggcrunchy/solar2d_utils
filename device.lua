@@ -42,83 +42,7 @@ local M = {}
 --
 --
 
--- --
-local OUYA = "OUYA Game Controller"
-
--- --
-local PS3 = "PLAYSTATION(R)3 Controller"
-
--- --
-local XInput = "XInput Gamepad"
-
--- --
-local Devices = {}
-
--- --
-local Gamepads = {}
-
---
-local function IdentifyGamepad (device)
-	local name = device.displayName
-
-	if name:sub(1, #OUYA) == OUYA then
-		Gamepads[device] = "OUYA"
-	elseif name == PS3 then
-		Gamepads[device] = "PS3"
-	elseif name:find(XInput) then
-		Gamepads[device] = "Xbox360"
-	elseif device.MFiProfile then
-		local mfip = device.MFiProfile
-
-		Gamepads[device] = "MFi" .. mfip:sub(1, 1):upper() .. mfip:sub(2)
-	else -- TODO: several others, also test different platforms
-		Gamepads[device] = "unknown"
-	end
-end
-
---
-local OnAndroid = system.getInfo("platform") == "android" and system.getInfo("environment") == "device"
-
---
-local function AddNewDevice (device)
-	Devices[#Devices + 1] = device
-
-	if device.type == "gamepad" then
-		IdentifyGamepad(device)
-	elseif OnAndroid and device.type == "joystick" then
-		if device.displayName == "Microsoft X-Box 360 pad" then -- observed, but this concurs:
-		-- https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Microsoft_XBOX_360_Controller_USB.cfg
-			Gamepads[device] = "Xbox360"
-		end
-		-- TODO: need more controllers to see how this all generalizes
-	end
-end
-
---
-for _, device in ipairs(system.getInputDevices()) do
-	AddNewDevice(device)
-end
-
---
-Runtime:addEventListener("inputDeviceStatus", function(event)
-	local ed = event.device
-
-	for _, device in ipairs(Devices) do
-		if ed == device then
-			ed = nil
-			
-			break
-		end
-	end
-
-	if ed then
-		AddNewDevice(ed)
-	elseif event.connectionStateChanged then
-		-- ??? (also, reconfigured...)
-	end
-end)
-
--- --
+--[[
 local AxisMappings = {
 	OUYA = {
 		"left_x", "left_y", "left_trigger", "right_x", "right_y", "right_trigger"
@@ -127,15 +51,14 @@ local AxisMappings = {
 		"left_x", "left_y", "right_x", "right_y", [13] = "left_trigger", [14] = "right_trigger"
 	}
 }
+]]
 
--- --
 local Axes
 
---
 local function BindAxisNumbers (device, mapping)
 	local axes = {}
 
-	for i, axis in ipairs(device:getAxes()) do
+	for i, _ in ipairs(device:getAxes()) do
 		local amap = mapping[i]
 
 		if amap then
@@ -147,61 +70,73 @@ local function BindAxisNumbers (device, mapping)
 end
 
 --
+--
+--
+
 local AddDevice = {}
 
--- --
+--
+--
+--
+
+local OUYA = "OUYA Game Controller"
+
+local PS3 = "PLAYSTATION(R)3 Controller"
+
 local Joysticks
 
-do
-	--
-	function AddDevice:joystick (index)
-		local name, joy, mapping = self.displayName, { device = self }
+function AddDevice:joystick (index)
+	local name, joy, mapping = self.displayName, { device = self }
 
-		if name:sub(1, #OUYA) == OUYA then
-			mapping = Axes.OUYA
-		elseif name == PS3 then
-			mapping = Axes.PS3
-		-- elseif in database, i.e. under `permanentId`... (limit this?)
-			--
-		end
-
+	if name:sub(1, #OUYA) == OUYA then
+		mapping = Axes.OUYA
+	elseif name == PS3 then
+		mapping = Axes.PS3
+	-- elseif in database, i.e. under `permanentId`... (limit this?)
 		--
-		if mapping then
-			BindAxisNumbers(self, mapping)
-
-			joy.mapping = mapping
-		end
-
-		--
-		Joysticks[index] = joy
 	end
+
+	--
+	if mapping then
+		BindAxisNumbers(self, mapping)
+
+		joy.mapping = mapping
+	end
+
+	--
+	Joysticks[index] = joy
 end
 
--- --
+
+--
+--
+--
+
 local Keyboards
 
-do
-	--
-	function AddDevice:keyboard (index)
-		-- Do we care about particular keyboards?
-			-- possible to omit built-ins?
-		-- Load key mappings from database?
-		-- Include default...
-		Keyboards[index] = { device = self }
-	end
+function AddDevice:keyboard (index)
+	-- Do we care about particular keyboards?
+		-- possible to omit built-ins?
+	-- Load key mappings from database?
+	-- Include default...
+	Keyboards[index] = { device = self }
 end
 
--- --
+--
+--
+--
+
 local Mice
 
-do
-	--
-	function AddDevice:mouse (index)
-		-- Do we care about particular mice? (maybe just if they have a wheel...)
-		-- Load button mappings?
-		Mice[index] = { device = self }
-	end
+function AddDevice:mouse (index)
+	-- Do we care about particular mice? (maybe just if they have a wheel...)
+	-- Load button mappings?
+	Mice[index] = { device = self }
 end
+
+--
+--
+--
 
 --- DOCME
 function M.EnumerateDevices ()
@@ -217,6 +152,10 @@ function M.EnumerateDevices ()
 		end
 	end
 end
+
+--
+--
+--
 
 --- DOCME
 function M.GetAxisMapping (event)
@@ -236,7 +175,7 @@ end
 -- same for button?
 
 -- ouya, nvidia shield, gamestick
-if false then
+--[[
 	local function KeyEvent (event)
 		local key_name = event.keyName
 
@@ -257,6 +196,11 @@ if false then
 
 	Runtime:addEventListener("key", KeyEvent)
 end
+]]
+
+--
+--
+--
 
 -- Adapted from ponywolf's joykey:
 do
@@ -326,7 +270,6 @@ do
 		return true
 	end
 
-	-- --
 	local IsMapped
 
 	--- DOCME
@@ -341,7 +284,10 @@ do
 	end
 end
 
--- --
+--
+--
+--
+
 local Actions = {}
 
 --- DOCME
@@ -353,6 +299,12 @@ function M.MapButtonsToAction (action, map)
 	end
 end
 
+--
+--
+--
+
+local Gamepads = {}
+
 --- DOCME
 function M.TranslateButton (event)
 	local ctype = Gamepads[event.device]
@@ -360,5 +312,73 @@ function M.TranslateButton (event)
 
 	return cgroup and cgroup[event.keyName]
 end
+
+--
+--
+--
+
+local XInput = "XInput Gamepad"
+
+local Devices = {}
+
+local function IdentifyGamepad (device)
+	local name = device.displayName
+
+	if name:sub(1, #OUYA) == OUYA then
+		Gamepads[device] = "OUYA"
+	elseif name == PS3 then
+		Gamepads[device] = "PS3"
+	elseif name:find(XInput) then
+		Gamepads[device] = "Xbox360"
+	elseif device.MFiProfile then
+		local mfip = device.MFiProfile
+
+		Gamepads[device] = "MFi" .. mfip:sub(1, 1):upper() .. mfip:sub(2)
+	else -- TODO: several others, also test different platforms
+		Gamepads[device] = "unknown"
+	end
+end
+
+local OnAndroid = system.getInfo("platform") == "android" and system.getInfo("environment") == "device"
+
+local function AddNewDevice (device)
+	Devices[#Devices + 1] = device
+
+	if device.type == "gamepad" then
+		IdentifyGamepad(device)
+	elseif OnAndroid and device.type == "joystick" then
+		if device.displayName == "Microsoft X-Box 360 pad" then -- observed, but this concurs:
+		-- https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Microsoft_XBOX_360_Controller_USB.cfg
+			Gamepads[device] = "Xbox360"
+		end
+		-- TODO: need more controllers to see how this all generalizes
+	end
+end
+
+for _, device in ipairs(system.getInputDevices()) do
+	AddNewDevice(device)
+end
+
+Runtime:addEventListener("inputDeviceStatus", function(event)
+	local ed = event.device
+
+	for _, device in ipairs(Devices) do
+		if ed == device then
+			ed = nil
+			
+			break
+		end
+	end
+
+	if ed then
+		AddNewDevice(ed)
+	elseif event.connectionStateChanged then
+		-- ??? (also, reconfigured...)
+	end
+end)
+
+--
+--
+--
 
 return M

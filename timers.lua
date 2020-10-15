@@ -56,12 +56,20 @@ function M.HasExpired (handle)
 	return handle._expired == true -- q.v. timer library source
 end
 
+--
+--
+--
+
 --- 
 -- @tparam TimerHandle handle
 -- @treturn boolean The timer is still active, but paused?
 function M.IsPaused (handle)
 	return not handle._expired and handle._pauseTime ~= nil -- q.v. timer library source
 end
+
+--
+--
+--
 
 --- Spawn a new timer, reusing another timer's listener.
 --
@@ -80,6 +88,10 @@ function M.PerformWithDelayFromExample (delay, handle, iterations)
 		return timer.performWithDelay(delay, listener, iterations)
 	end
 end
+
+--
+--
+--
 
 local function DefError (err, _) error(err) end
 
@@ -118,6 +130,10 @@ function M.Wrap (delay, func, err_func)
 	return handle
 end
 
+--
+--
+--
+
 --- DOCME
 function M.YieldEach (n)
 	local count = n
@@ -132,6 +148,10 @@ function M.YieldEach (n)
 		end
 	end
 end
+
+--
+--
+--
 
 --- DOCME
 function M.YieldOnTimeout (timeout)
@@ -149,6 +169,10 @@ function M.YieldOnTimeout (timeout)
 		end
 	end
 end
+
+--
+--
+--
 
 _Wrap_ = M.Wrap
 

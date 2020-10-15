@@ -286,6 +286,10 @@ function M.AddSnippet (params)
 	return id
 end
 
+--
+--
+--
+
 local function Gather (snippet, list)
 	if snippet.generation ~= Generation then
 		for _, requirement in ipairs(snippet.requirements) do
@@ -359,5 +363,9 @@ function M.AugmentKernels (params, out)
 
 	return out
 end
+
+--
+--
+--
 
 return M

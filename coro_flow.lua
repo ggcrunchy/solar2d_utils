@@ -87,6 +87,10 @@ function M.BasicBody (update, done, arg1, arg2, arg3)
 	end
 end
 
+--
+--
+--
+
 local IterationLapse
 
 --- DOCME
@@ -94,12 +98,20 @@ function M.GetIterationLapse ()
 	return IterationLapse or 0
 end
 
+--
+--
+--
+
 local IterationTime
 
 --- DOCME
 function M.GetIterationTime ()
 	return IterationTime or 0
 end
+
+--
+--
+--
 
 local Deduct, Lapse
 
@@ -114,6 +126,10 @@ function M.GetLapse ()
 		return 0
 	end
 end
+
+--
+--
+--
 
 --- Make a function that can assume different behavior for each coroutine.
 -- @treturn function Function which takes a single argument and passes it to the logic
@@ -140,6 +156,10 @@ function M.MakeLocalStorage ()
 	end
 end
 
+--
+--
+--
+
 --- Assigns the time lapse functions used by @{Body_Timed}.
 --
 -- The lapse function tells us how much time is available **right now** to run a timed body
@@ -164,6 +184,10 @@ function M.SetTimeLapseFuncs (lapse, deduct)
 	Lapse, Deduct = lapse, deduct
 end
 
+--
+--
+--
+
 local UsingTime
 
 --- DOCME
@@ -171,10 +195,18 @@ function M.SetUsingTime ()
 	UsingTime = true
 end
 
+--
+--
+--
+
 --- DOCME
 function M.SetYieldValue (value)
 	YieldValue = value
 end
+
+--
+--
+--
 
 local function Clamp (lapse, total)
     assert(lapse >= 0, "Lapse must be non-negative")
@@ -276,6 +308,10 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 	end
 end
 
+--
+--
+--
+
 local function AuxWait (duration)
 	local time = _GetIterationTime_()
 
@@ -296,6 +332,10 @@ end
 function M.Wait (duration, update, arg)
 	return _TimedBody_(update, AuxWait, duration, arg)
 end
+
+--
+--
+--
 
 local function ChooseBody ()
 	local body = UsingTime and _TimedBody_ or _BasicBody_
@@ -321,6 +361,10 @@ function M.WaitUntil (test, update, arg)
 	return ChooseBody()(update, test, arg)
 end
 
+--
+--
+--
+
 --- Wait until `object[name]` is true.
 -- @param object
 -- @param name
@@ -332,6 +376,10 @@ end
 function M.WaitUntilPropertyTrue (object, name, update, arg)
 	return ChooseBody()(update, Index, object, name, arg)
 end
+
+--
+--
+--
 
 --- Wait while `test(arg)` is true.
 -- @callable test Test function, with the same signature as _update_. If it returns
@@ -346,6 +394,10 @@ function M.WaitWhile (test, update, arg)
 
 	return ChooseBody()(update, test, arg)
 end
+
+--
+--
+--
 
 --- Wait while `object[name]` is true.
 --
@@ -362,6 +414,10 @@ function M.WaitWhilePropertyTrue (object, name, update, arg)
 
 	return ChooseBody()(update, Index, object, name, arg)
 end
+
+--
+--
+--
 
 _BasicBody_ = M.BasicBody
 _GetIterationLapse_ = M.GetIterationLapse

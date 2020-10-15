@@ -65,6 +65,10 @@ function M.AddQuadIndices (indices, i1, i2, i3, i4, base)
 	_AddTriangleIndices_(indices, i2, i3, i4, base + 3)
 end
 
+--
+--
+--
+
 --- DOCME
 function M.AddTexturedVertex (uvs, vertices, x, y, w, h)
 	uvs[#uvs + 1] = x / w + .5
@@ -73,6 +77,10 @@ function M.AddTexturedVertex (uvs, vertices, x, y, w, h)
 	vertices[#vertices + 1] = x
 	vertices[#vertices + 1] = y
 end
+
+--
+--
+--
 
 --- DOCMEMORE
 -- Add the indices as a triangle
@@ -84,19 +92,35 @@ function M.AddTriangleIndices (indices, i1, i2, i3, base)
 	indices[base + 3] = i3
 end
 
+--
+--
+--
+
 local Builder = {}
 
 Builder.__index = Builder
+
+--
+--
+--
 
 --- Manually clear the "above" flag.
 function Builder:ClearAboveFlag ()
 	self[_above_flag] = nil
 end
 
+--
+--
+--
+
 --- Manually clear the "left" flag.
 function Builder:ClearLeftFlag ()
 	self[_left_flag] = nil
 end
+
+--
+--
+--
 
 local function GetIndices (B)
 	local indices = B[_indices] or {} -- if first emission, might not have indices
@@ -178,6 +202,10 @@ function Builder:EmitBottomEdge ()
 	end
 end
 
+--
+--
+--
+
 local function AuxEmitIndex (B, index)
 	local indices, offset = GetIndices(B), B[_offset]
 
@@ -205,6 +233,10 @@ function Builder:EmitDegenerateIndex ()
 	AuxEmitIndex(self, DegenerateIndex(self))
 end
 
+--
+--
+--
+
 local function SetDegenerateIndices (B)
 	local index = DegenerateIndex(B)
 
@@ -214,12 +246,20 @@ local function SetDegenerateIndices (B)
 	B:SetUpperRight(index)
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:EmitDegenerateQuad ()
 	SetDegenerateIndices(self)
 
 	self:EmitQuad()
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:EmitDegenerateTriangle ()
@@ -228,10 +268,18 @@ function Builder:EmitDegenerateTriangle ()
 	self:EmitTriangle()
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:EmitIndex (index)
 	AuxEmitIndex(self, index)
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:EmitQuad ()
@@ -253,6 +301,10 @@ function Builder:EmitQuad ()
 		self:SetLowerLeft(lr)
 	end
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:EmitTriangle ()
@@ -313,6 +365,10 @@ function Builder:EmitTriangle ()
 	end
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:FinishIndexShape ()
 	local shape = self[_shape]
@@ -323,6 +379,10 @@ function Builder:FinishIndexShape ()
 
 	self[_shape] = "none" -- invalidate so other shapes can proceed, but leave count for querying
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:GetLastIndices (how)
@@ -348,10 +408,18 @@ function Builder:GetLastIndices (how)
 	return unpack(indices, offset - count + 1, offset)
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:GetColumnCount ()
 	return self[_ncols]
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:GetLastShape ()
@@ -364,10 +432,18 @@ function Builder:GetLastShape ()
 	end
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:GetMaxIndex ()
 	return self[_max_index]
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:GetResult ()
@@ -381,6 +457,10 @@ function Builder:GetResult ()
 		return out, 0 -- indices table may be present but unwritten
 	end
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:Reset (max_index)
@@ -396,10 +476,18 @@ function Builder:Reset (max_index)
 	end
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetAboveFlag ()
 	self[_above_flag] = true
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:SetIndices (indices)
@@ -408,20 +496,36 @@ function Builder:SetIndices (indices)
 	self[_indices] = indices
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetLeftFlag ()
 	self[_left_flag] = true
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:SetLowerLeft (index)
 	self[_lower_left] = index
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetLowerRight (index)
 	self[_lower_right] = index
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:SetMaxIndex (max_index)
@@ -430,6 +534,10 @@ function Builder:SetMaxIndex (max_index)
 	self[_max_index] = max_index or 0
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetOffset (offset)
 	assert(self[_offset] == self[_base_offset], "Building in progress")
@@ -437,15 +545,27 @@ function Builder:SetOffset (offset)
 	self[_offset] = offset or 0
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetUpperLeft (index)
 	self[_upper_left] = index
 end
 
+--
+--
+--
+
 --- DOCME
 function Builder:SetUpperRight (index)
 	self[_upper_right] = index
 end
+
+--
+--
+--
 
 --- DOCME
 function Builder:Skip ()
@@ -453,6 +573,10 @@ function Builder:Skip ()
 
 	self[_shape], self[_index_shape_count] = "none", 0
 end
+
+--
+--
+--
 
 local function NewBuilder (ncols)
 	local builder = setmetatable({ [_base_offset] = 0 }, Builder)
@@ -473,8 +597,16 @@ function M.NewLatticeBuilder (ncols)
 	return NewBuilder(ncols)
 end
 
+--
+--
+--
+
 --- DOCME
 M.NewSequenceBuilder = NewBuilder
+
+--
+--
+--
 
 _AddQuadIndices_ = M.AddQuadIndices
 _AddTriangleIndices_ = M.AddTriangleIndices

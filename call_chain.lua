@@ -33,11 +33,15 @@ local M = {}
 --
 --
 
-local function DefShell (handler, arg) return handler(arg) end
-
 local CallChain = {}
 
 CallChain.__index = CallChain
+
+--
+--
+--
+
+local function DefShell (handler, arg) return handler(arg) end
 
 --- Call the most recent handler, if present, as `result, new = shell(handler, arg`).
 --
@@ -68,11 +72,19 @@ function CallChain:__call (arg, get_def_result)
     return get_def_result and get_def_result(arg)
 end
 
+--
+--
+--
+
 --- Guard any current handlers in the chain from removal by future @{CallChain:Clear} and
 -- @{CallChain:Pop} calls.
 function CallChain:Bake ()
     self.m_base = #self
 end
+
+--
+--
+--
 
 --- Remove all handlers from the chain.
 -- @bool clear_baked Remove handlers guarded by @{EventStack:Bake}?
@@ -82,12 +94,20 @@ function CallChain:Clear (clear_baked)
     end
 end
 
+--
+--
+--
+
 ---
 -- @treturn callable? Most recently added handler, or **nil** if empty.
 -- @see CallChain:Push
 function CallChain:GetTop ()
     return self[#self]
 end
+
+--
+--
+--
 
 --- Remove the most recent handler from the chain, if present.
 -- @treturn callable? Handler, or **nil** if it was baked or the chain was empty.
@@ -102,11 +122,19 @@ function CallChain:Pop ()
     return top
 end
 
+--
+--
+--
+
 --- Add a handler to the chain.
 -- @callable handler
 function CallChain:Push (handler)
     self[#self + 1] = handler
 end
+
+--
+--
+--
 
 --- Assign a shell behavior, e.g. to ignore results or automate handler chaining.
 -- @tparam ?|callable|nil shell New shell, or **nil** to restore the default.
@@ -114,6 +142,10 @@ end
 function CallChain:SetShell (shell)
     self.m_shell = shell
 end
+
+--
+--
+--
 
 ---
 -- @tstring[opt] name If present, the **__call** logic is also added under this key; this is
@@ -129,5 +161,9 @@ function M.New (name)
 
     return setmetatable(chain, CallChain)
 end
+
+--
+--
+--
 
 return M

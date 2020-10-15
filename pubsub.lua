@@ -71,7 +71,11 @@ function M.IsEndpoint (candidate, how)
 	return false
 end
 
---- Builds an endpoint from an ID and name.
+--
+--
+--
+
+--- Build an endpoint from an ID and name.
 -- @uint id Identifier for a particular "object". This must be unique within the context of a group
 -- of related @{PubSubList:Publish} and @{PubSubList:Subscribe} calls.
 -- @string name Named feature to request from the "object" through this endpoint.
@@ -80,11 +84,19 @@ function M.MakeEndpoint (id, name)
 	return format("%i:%s", id, name)
 end
 
+--
+--
+--
+
 local PubSubList = {}
 
 PubSubList.__index = PubSubList
 
---- Delivers published payloads to any subscribers waiting for them.
+--
+--
+--
+
+--- Deliver published payloads to any subscribers waiting for them.
 -- @see PubSubList:Publish, PubSubList:Subscribe, PubSubList:Wipe
 function PubSubList:Dispatch ()
 	for i = 1, #self, 3 do
@@ -93,6 +105,10 @@ function PubSubList:Dispatch ()
 		func(self[endpoint], arg)
 	end
 end
+
+--
+--
+--
 
 --- Make a feature available on the endpoint described by _id_ and _name_, cf.
 -- @{PubSubList:MakeEndpoint}. The payload will be delivered to any subscribers during a
@@ -113,6 +129,10 @@ function PubSubList:Publish (payload, id, name)
 	end
 end
 
+--
+--
+--
+
 --- Listen for any payloads published on _endpoints_, cf. @{PubSubList:Publish}.
 -- @tparam ?|string|{string,...}|nil endpoints 0, 1, or multiple publisher endpoints.
 -- @callable func When @{PubSubList:Dispatch} is fired, `func(payload, arg)` will be called
@@ -129,6 +149,10 @@ function PubSubList:Subscribe (endpoints, func, arg)
 	end
 end
 
+--
+--
+--
+
 --- Wipe all payloads and subscribers from the list.
 -- @see PubSubList:Publish, PubSubList:Subscribe
 function PubSubList:Wipe ()
@@ -137,11 +161,19 @@ function PubSubList:Wipe ()
     end
 end
 
+--
+--
+--
+
 ---
 -- @treturn PubSubList Pub-sub list.
 function M.New ()
 	return setmetatable({}, PubSubList)
 end
+
+--
+--
+--
 
 _MakeEndpoint_ = M.MakeEndpoint
 

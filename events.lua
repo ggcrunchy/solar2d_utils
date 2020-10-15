@@ -52,6 +52,10 @@ function M.BindNamedArgument (name, arg)
 	CallEvent[name] = arg
 end
 
+--
+--
+--
+
 --- DOCME
 function M.DispatchOrHandle (object, event, def)
 	local target, result = _GetRedirectTarget_(object)
@@ -81,12 +85,20 @@ function M.DispatchOrHandle (object, event, def)
 	return result
 end
 
+--
+--
+--
+
 --- DOCME
 function M.DispatchOrHandle_Named (name, object, def)
 	CallEvent.name = name
 
 	return _DispatchOrHandle_(object, CallEvent, def)
 end
+
+--
+--
+--
 
 local Redirects = meta.WeakKeyed()
 
@@ -102,12 +114,20 @@ function M.Redirect (func, target)
 	Redirects[func] = target
 end
 
+--
+--
+--
+
 --- DOCME
 function M.UnbindArguments ()
 	for k in pairs(CallEvent) do
 		CallEvent[k] = nil
 	end
 end
+
+--
+--
+--
 
 _DispatchOrHandle_ = M.DispatchOrHandle
 _GetRedirectTarget_ = M.GetRedirectTarget

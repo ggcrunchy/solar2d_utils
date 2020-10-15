@@ -54,6 +54,10 @@ function M.Dirty (object)
 	end
 end
 
+--
+--
+--
+
 local IsHidden, Partners
 
 --- DOCME
@@ -64,6 +68,10 @@ function M.DoIfEnabled (object, other, func)
 		func(object, other, true)
 	end
 end
+
+--
+--
+--
 
 local function WipeState (object)
 	if IsHidden then
@@ -136,6 +144,10 @@ function M.DoOrDefer (object, other, phase, func)
 	end
 end
 
+--
+--
+--
+
 ---
 -- @pobject object Object to poll about visibility.
 -- @treturn boolean Is _object_ visible?
@@ -143,6 +155,10 @@ end
 function M.IsEnabled (object)
 	return not IsHidden[object]
 end
+
+--
+--
+--
 
 local function Watch (o1, o2, value)
 	local w1, w2 = Watching[o1], Watching[o2]
@@ -172,6 +188,10 @@ function M.OnCollision (o1, o2, phase, id)
 
 	return true
 end
+
+--
+--
+--
 
 --- DOCME
 function M.Enable (object, show)
@@ -215,15 +235,27 @@ function M.Enable (object, show)
 	end
 end
 
+--
+--
+--
+
 --- DOCME
 function M.Start ()
 	IsHidden, Partners, Watching = {}, {}, {}
 end
 
+--
+--
+--
+
 --- DOCME
 function M.Stop ()
 	IsHidden, Partners, Watching = nil
 end
+
+--
+--
+--
 
 --- DOCME
 function M.Update (old_id, on_collision_ended)
@@ -250,6 +282,10 @@ function M.Update (old_id, on_collision_ended)
 
 	return Watching ~= nil
 end
+
+--
+--
+--
 
 _Enable_ = M.Enable
 

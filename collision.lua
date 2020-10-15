@@ -25,7 +25,6 @@
 
 -- Standard library imports --
 local assert = assert
-local pairs = pairs
 
 -- Modules --
 local visibility = require("solar2d_utils.visibility")
@@ -89,6 +88,10 @@ M.ActivateLater = MakeDeferred(function(object)
 	object.isBodyActive = true
 end)
 
+--
+--
+--
+
 local Handlers = {}
 
 --- Define a collision handler for objects of a given collision type with other objects.
@@ -104,13 +107,25 @@ function M.AddHandler (type, func)
 	Handlers[type] = func
 end
 
+--
+--
+--
+
 --- DOCME
 M.DeactivateLater = MakeDeferred(function(object)
 	object.isBodyActive = false
 end)
 
+--
+--
+--
+
 --- DOCME
 M.DoLater = Defer
+
+--
+--
+--
 
 local NewMask = 0x1
 
@@ -150,6 +165,10 @@ function M.GetBitmask (name)
 	return mask
 end
 
+--
+--
+--
+
 --- DOCME
 function M.GetCombinedBitmask (names)
 	local bits, new_mask, mask = 0, NewMask
@@ -174,6 +193,10 @@ function M.GetCombinedBitmask (names)
 	return bits
 end
 
+--
+--
+--
+
 local Types = {}
 
 ---
@@ -183,6 +206,10 @@ local Types = {}
 function M.GetType (object)
 	return display.isValid(object) and Types[object] or nil -- fallthrough if untyped
 end
+
+--
+--
+--
 
 --- Assign a sensor body to an object.
 -- @pobject object Object to make into a sensor.
@@ -194,6 +221,10 @@ function M.MakeSensor (object, body_type, props)
 	object.isSensor = true
 end
 
+--
+--
+--
+
 --- Attempt to remove an object's body.
 -- @param object Object with body to remove.
 -- @treturn boolean Was a body removed?
@@ -201,10 +232,18 @@ function M.RemoveBody (object)
 	return _GetType_(object) ~= nil and physics.removeBody(object)
 end
 
+--
+--
+--
+
 --- DOCME
 M.StopLater = MakeDeferred(function(object)
 	object:setLinearVelocity(0, 0)
 end)
+
+--
+--
+--
 
 --- Associate a collision type with _object_. This is used to choose _object_'s handler in
 -- the event of a collision, and will also be provided (as a convenience) to the other
@@ -216,14 +255,9 @@ function M.SetType (object, type)
 	Types[object] = type
 end
 
-local function EnterLevel (event)
-	if event.name == "enter_level" then
-		physics.start()
-		physics.setGravity(0, 0)
-	end
-
-	visibility.Start()
-end
+--
+--
+--
 
 local function AuxCollision (phase, o1, o2, contact)
 	local h1, h2 = Handlers[_GetType_(o1)], Handlers[_GetType_(o2)]
@@ -237,38 +271,63 @@ local function AuxCollision (phase, o1, o2, contact)
 	end
 end
 
+local FrameID
+
+Runtime:addEventListener("collision", function(event)
+	local o1, o2, phase = event.object1, event.object2, event.phase
+
+	if visibility.OnCollision(o1, o2, phase, FrameID) then
+		AuxCollision(phase, o1, o2, event.contact)
+	end
+end)
+
+--
+--
+--
+
 local function OnEnded (object, other)
 	AuxCollision("ended", object, other, false)
 end
 
-local FrameID
+Runtime:addEventListener("enterFrame", function(event)
+	if visibility.Update(FrameID, OnEnded) then
+		FrameID = event.frame
+	end
+end)
 
-for k, v in pairs{
-	collision = function(event)
-		local o1, o2, phase = event.object1, event.object2, event.phase
+--
+--
+--
 
-		if visibility.OnCollision(o1, o2, phase, FrameID) then
-			AuxCollision(phase, o1, o2, event.contact)
-		end
-	end,
+local function EnterLevel (event)
+	if event.name == "enter_level" then
+		physics.start()
+		physics.setGravity(0, 0)
+	end
 
-	enterFrame = function(event)
-		if visibility.Update(FrameID, OnEnded) then
-			FrameID = event.frame
-		end
-	end,
-
-	enter_level = EnterLevel,
-
-	leave_level = function()
-		physics.stop()
-		visibility.Stop()
-	end,
-
-	reset_level = EnterLevel
-} do
-	Runtime:addEventListener(k, v)
+	visibility.Start()
 end
+
+Runtime:addEventListener("enter_level", EnterLevel)
+
+--
+--
+--
+
+Runtime:addEventListener("leave_level", function()
+	physics.stop()
+	visibility.Stop()
+end)
+
+--
+--
+--
+
+Runtime:addEventListener("reset_level", EnterLevel)
+
+--
+--
+--
 
 _GetType_ = M.GetType
 

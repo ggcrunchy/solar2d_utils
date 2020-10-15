@@ -63,6 +63,10 @@ function M.Add (list, n)
 	end
 end
 
+--
+--
+--
+
 local CheckNonce
 
 --- DOCME
@@ -73,6 +77,10 @@ function M.Check (list, n)
 		return 0
 	end
 end
+
+--
+--
+--
 
 local ActionNonce, IndexNonce
 
@@ -97,6 +105,10 @@ end
 function M.IterateList (list)
 	return AuxList, list, list and list(IndexNonce)
 end
+
+--
+--
+--
 
 local BoxesStash = {}
 
@@ -162,6 +174,10 @@ local function MaybeNil (name)
 	end
 end
 
+--
+--
+--
+
 -- Arbitrarily use internal objects as nonces.
 NilKey = Specials
 ActionNonce = BoxesStash
@@ -173,6 +189,10 @@ Specials[ActionNonce] = "action"
 Specials[AddNonce] = "add"
 Specials[CheckNonce] = "check"
 Specials[IndexNonce] = "index"
+
+--
+--
+--
 
 --- DOCME
 -- @param[opt] name
@@ -227,9 +247,17 @@ function M.MakePerObjectList (name)
 	end, object_to_list
 end
 
+--
+--
+--
+
 local Dispatcher = {}
 
 Dispatcher.__index = Dispatcher
+
+--
+--
+--
 
 --- DOCME
 -- @param object
@@ -239,6 +267,10 @@ function Dispatcher:AddForObject (object, n)
 	return _Add_(self.m_object_to_list[object], n)
 end
 
+--
+--
+--
+
 --- DOCME
 -- @param object
 -- @uint n
@@ -246,6 +278,10 @@ end
 function Dispatcher:CheckForObject (object, n)
 	return _Check_(self.m_object_to_list[object], n)
 end
+
+--
+--
+--
 
 --- DOCME
 -- @param object
@@ -259,11 +295,19 @@ function Dispatcher:DispatchForObject (object)
     end
 end
 
+--
+--
+--
+
 --- DOCME
 -- @treturn function A
 function Dispatcher:GetAdder ()
     return self.m_add_to_list
 end
+
+--
+--
+--
 
 --- DOCME
 -- @param object
@@ -271,6 +315,10 @@ end
 function Dispatcher:IterateFunctionsForObject (object)
     return _IterateList_(self.m_object_to_list[object])
 end
+
+--
+--
+--
 
 ---
 -- @param[opt] name
@@ -282,6 +330,10 @@ function M.NewDispatcher (name)
 
 	return setmetatable(dispatcher, Dispatcher)
 end
+
+--
+--
+--
 
 --- DOCME
 function M.SetEnvironment (params)
@@ -322,6 +374,10 @@ function M.SetEnvironment (params)
 
 	Environments[MaybeNil(params.name)] = env
 end
+
+--
+--
+--
 
 _Add_ = M.Add
 _Check_ = M.Check

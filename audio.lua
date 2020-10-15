@@ -61,6 +61,10 @@ function M.Enable (enable)
 	IsQuiet = not enable
 end
 
+--
+--
+--
+
 local function RemoveDeadChannels (channels)
 	local n = #channels
 
@@ -210,12 +214,17 @@ local function LoadInfo (handles, info)
 	end
 end
 
--- Groups of related audio, e.g. all sounds related to a type of object --
-local Groups = {}
+--
+--
+--
 
 local SoundGroup = {}
 
 SoundGroup.__index = SoundGroup
+
+--
+--
+--
 
 --- DOCME
 function SoundGroup:IsActive ()
@@ -239,6 +248,10 @@ function SoundGroup:IsActive ()
 
 	return false
 end
+
+--
+--
+--
 
 --- Initializes a group. This must be called before the group is used to play any sounds.
 --
@@ -283,6 +296,10 @@ function SoundGroup:Load ()
 	end
 end
 
+--
+--
+--
+
 --- DOCME
 function SoundGroup:PauseAll ()
 	if IsQuiet then
@@ -306,13 +323,21 @@ function SoundGroup:PauseAll ()
 	end
 end
 
---- Utility.
+--
+--
+--
+
+---
 -- @param name Name of sound to play.
 -- @uint[opt] delay Optional delay, in milliseconds, before playing.
 -- @treturn TimerHandle A timer that may be cancelled, or **nil** if _delay_ was absent.
 function SoundGroup:PlaySound (name, delay)
 	return Play(self, assert(self.m_handles, "Sound group not loaded"), name, delay)
 end
+
+--
+--
+--
 
 --- If the group has an array part, plays one of its sounds.
 -- @uint[opt] delay Optional delay, in milliseconds, before playing.
@@ -322,6 +347,13 @@ function SoundGroup:RandomSound (delay)
 
 	return Play(self, handles, random(#handles), delay)
 end
+
+--
+--
+--
+
+-- Groups of related audio, e.g. all sounds related to a type of object --
+local Groups = {}
 
 --- DOCME
 function SoundGroup:Remove ()
@@ -335,6 +367,10 @@ function SoundGroup:Remove ()
 		remove(Groups, index)
 	end
 end
+
+--
+--
+--
 
 --- DOCME
 function SoundGroup:ResumeAll ()
@@ -358,6 +394,10 @@ function SoundGroup:ResumeAll ()
 		end
 	end
 end
+
+--
+--
+--
 
 -- Rewind?
 
@@ -395,6 +435,10 @@ function SoundGroup:StopAll ()
 		end
 	end
 end
+
+--
+--
+--
 
 -- Common logic for making a sound group
 local function AuxNewSoundGroup (info)
@@ -474,6 +518,10 @@ function M.NewSoundGroup (sounds)
 	return AuxNewSoundGroup(info)
 end
 
+--
+--
+--
+
 --- DOCME
 function M.NewSoundGroup_Multi (arr)
 	local info = {}
@@ -484,6 +532,10 @@ function M.NewSoundGroup_Multi (arr)
 
 	return AuxNewSoundGroup(info)
 end
+
+--
+--
+--
 
 -- TODO: Menu audio
 
@@ -563,8 +615,11 @@ local function TaperOut (group, clear) -- TODO: didn't realize there was an audi
 	end
 end
 
--- Leave Level response
-local function LeaveLevel ()
+--
+--
+--
+
+Runtime:addEventListener("leave_level", function()
 	for _, group in ipairs(Groups) do
 		if IsQuiet then
 			StopAllQuiet(group)
@@ -577,28 +632,30 @@ local function LeaveLevel ()
 	end
 
 	ClearDeferredItems()
-end
+end)
 
-for k, v in pairs{
-	leave_level = LeaveLevel,
+--
+--
+--
 
-	reset_level = function()
-		for _, group in ipairs(Groups) do
-			if IsQuiet then
-				StopAllQuiet(group)
-			else
-				TaperOut(group)
-			end
-
-			for _, sinfo in pairs(group.m_info) do
-				sinfo.m_time = nil
-			end
+Runtime:addEventListener("reset_level", function()
+	for _, group in ipairs(Groups) do
+		if IsQuiet then
+			StopAllQuiet(group)
+		else
+			TaperOut(group)
 		end
 
-		ClearDeferredItems()
+		for _, sinfo in pairs(group.m_info) do
+			sinfo.m_time = nil
+		end
 	end
-} do
-	Runtime:addEventListener(k, v)
-end
+
+	ClearDeferredItems()
+end)
+
+--
+--
+--
 
 return M

@@ -76,7 +76,6 @@ local function OnEvent ()
 	end
 end
 
---
 local function AuxDoAndWait (target, params)
 	local event1, func1 = remove(EventCache) or OnEvent(), params.onCancel
 	local event2, func2 = remove(EventCache) or OnEvent(), params.onComplete
@@ -109,7 +108,6 @@ local function Cleanup (event1, event2)
 	EventCache[#EventCache + 1] = event2
 end
 
--- --
 local Pollers = {}
 
 --- DOCME
@@ -144,6 +142,10 @@ function M.DoAndPoll (target, params)
 	return poll, handle
 end
 
+--
+--
+--
+
 --- Kicks off a transition and waits until it has finished.
 --
 -- This must be called within a coroutine.
@@ -169,83 +171,97 @@ function M.DoAndWait (target, params, update)
 	return HandleState[handle]
 end
 
+--
+--
+--
+
 --- DOCME
 function M.GetState (handle)
 	return HandleState[handle] or "none"
 end
 
-do
-	-- --
-	local MT = {
-		__index = function(proxy, _)
-			return proxy.m_t
-		end,
+--
+--
+--
 
-		__newindex = function(proxy, _, t)
-			proxy.m_t = t
+local MT = {
+	__index = function(proxy, _)
+		return proxy.m_t
+	end,
 
-			proxy.m_func(t, proxy.m_arg)
-		end
-	}
+	__newindex = function(proxy, _, t)
+		proxy.m_t = t
 
-	--
-	local function OnDone (proxy)
-		proxy.m_done(proxy.m_arg)
+		proxy.m_func(t, proxy.m_arg)
 	end
+}
 
-	-- --
-	local Params = {
-		t = 1,
-
-		onStart = function(proxy)
-			proxy.m_t = 0
-		end
-	}
-
-	-- Standard non-listener keys --
-	local Keys = { "delay", "delta", "iterations", "tag", "time", "transition" }
-
-	--
-	local function AuxProxy (func, options, arg, done)
-		local proxy = setmetatable({ m_func = func, m_t = false, m_arg = arg or false, m_done = done or false }, MT)
-
-		for i = 1, #(options and Keys or "") do
-			local k = Keys[i]
-
-			Params[k] = options[k] or Params[k]
-		end
-
-		local handle = transition.to(proxy, Params)
-
-		for k in pairs(Params) do
-			if k ~= "onStart" and k ~= "t" then
-				Params[k] = nil
-			end
-		end
-
-		return handle
-	end
-
-	--- DOCME
-	function M.Proxy (func, options, arg)
-		return AuxProxy(func, options, arg)
-	end
-
-	--- DOCME
-	function M.Proxy_Done (func, on_done, options, arg)
-		Params.onComplete = OnDone
-
-		return AuxProxy(func, options, arg, on_done)
-	end
-
-	--- DOCME
-	function M.Proxy_Repeat (func, on_done, options, arg)
-		Params.onRepeat = OnDone
-		Params.iterations = 0
-
-		return AuxProxy(func, options, arg, on_done)
-	end
+local function OnDone (proxy)
+	proxy.m_done(proxy.m_arg)
 end
+
+local Params = {
+	t = 1,
+
+	onStart = function(proxy)
+		proxy.m_t = 0
+	end
+}
+
+-- Standard non-listener keys --
+local Keys = { "delay", "delta", "iterations", "tag", "time", "transition" }
+
+local function AuxProxy (func, options, arg, done)
+	local proxy = setmetatable({ m_func = func, m_t = false, m_arg = arg or false, m_done = done or false }, MT)
+
+	for i = 1, #(options and Keys or "") do
+		local k = Keys[i]
+
+		Params[k] = options[k] or Params[k]
+	end
+
+	local handle = transition.to(proxy, Params)
+
+	for k in pairs(Params) do
+		if k ~= "onStart" and k ~= "t" then
+			Params[k] = nil
+		end
+	end
+
+	return handle
+end
+
+--- DOCME
+function M.Proxy (func, options, arg)
+	return AuxProxy(func, options, arg)
+end
+
+--
+--
+--
+
+--- DOCME
+function M.Proxy_Done (func, on_done, options, arg)
+	Params.onComplete = OnDone
+
+	return AuxProxy(func, options, arg, on_done)
+end
+
+--
+--
+--
+
+--- DOCME
+function M.Proxy_Repeat (func, on_done, options, arg)
+	Params.onRepeat = OnDone
+	Params.iterations = 0
+
+	return AuxProxy(func, options, arg, on_done)
+end
+
+--
+--
+--
 
 _GetState_ = M.GetState
 
