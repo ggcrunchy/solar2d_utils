@@ -91,7 +91,6 @@ local function Check (object)
 	end
 end
 
---
 local function AddToList (object, other, func)
 	Check(object)
 
@@ -100,14 +99,12 @@ local function AddToList (object, other, func)
 	Partners[object], list[other] = list, func
 end
 
---
 local function InList (object, other)
 	local list = Partners[object]
 
 	return list and list[other]
 end
 
---
 local function RemoveFromList (object, other)
 	local list = Partners[object]
 
@@ -140,6 +137,52 @@ function M.DoOrDefer (object, other, phase, func)
 		else
 			RemoveFromList(object, other)
 			RemoveFromList(other, object)
+		end
+	end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.Enable (object, show)
+	if display.isValid(object) and IsHidden then
+		local hide, is_hidden = not show, IsHidden[object]
+
+		IsHidden[object] = hide
+
+		--
+		if hide then
+			Check(object)
+
+		--
+		elseif is_hidden then
+			local list1 = Partners[object]
+
+			if list1 then
+				local is_immediate = is_hidden == "immediate"
+
+				for other, func in pairs(list1) do
+					local intact = display.isValid(other)
+
+					if not (intact and IsHidden[other]) then
+						if intact then
+							if func then
+								func(object, other, is_immediate)
+							end
+
+							--
+							local list2 = Partners[other]
+							local func2 = list2 and list2[object]
+
+							if func2 then
+								func2(other, object, is_immediate)
+							end
+						end
+					end
+				end
+			end
 		end
 	end
 end
@@ -187,52 +230,6 @@ function M.OnCollision (o1, o2, phase, id)
 	end
 
 	return true
-end
-
---
---
---
-
---- DOCME
-function M.Enable (object, show)
-	if display.isValid(object) and IsHidden then
-		local hide, is_hidden = not show, IsHidden[object]
-
-		IsHidden[object] = hide
-
-		--
-		if hide then
-			Check(object)
-
-		--
-		elseif is_hidden then
-			local list1 = Partners[object]
-
-			if list1 then
-				local is_immediate = is_hidden == "immediate"
-
-				for other, func in pairs(list1) do
-					local intact = display.isValid(other)
-
-					if not (intact and IsHidden[other]) then
-						if intact then
-							if func then
-								func(object, other, is_immediate)
-							end
-
-							--
-							local list2 = Partners[other]
-							local func2 = list2 and list2[object]
-
-							if func2 then
-								func2(other, object, is_immediate)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
 end
 
 --
