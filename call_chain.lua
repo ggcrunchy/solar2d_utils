@@ -138,9 +138,14 @@ end
 
 --- Assign a shell behavior, e.g. to ignore results or automate handler chaining.
 -- @tparam ?|callable|nil shell New shell, or **nil** to restore the default.
+-- @treturn ?|callable|nil Old shell, or **nil** if none was installed.
 -- @see CallChain:__call
 function CallChain:SetShell (shell)
+    local old = self.m_shell
+
     self.m_shell = shell
+
+    return old
 end
 
 --
