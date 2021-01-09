@@ -3,7 +3,8 @@
 --
 -- In particular, this is tailored toward functions honoring an "event" policy.
 --
--- TODO: this last bit might need some work
+-- TODO: this last bit might need some work, e.g. there is some resemblance to Solar's event
+-- dispatchers, albeit keyed to objects rather than event names
 
 --
 -- Permission is hereby granted, free of charge, to any person obtaining
@@ -40,9 +41,6 @@ local type = type
 local meta = require("tektite_core.table.meta")
 
 -- Cached module references --
-local _Add_
-local _Check_
-local _IterateList_
 local _MakePerObjectList_
 
 -- Exports --
@@ -52,15 +50,27 @@ local M = {}
 --
 --
 
+local Mode = meta.WeakKeyed()
+
+local function Validate (list)
+	assert(list == nil or Mode[list], "List function must originate from MakePerObjectList() or Dispatcher:GetAdder()")
+end
+
 local AddNonce
 
---- DOCME
-function M.Add (list, n)
+local function AuxAdd (list, n)
 	if list then
 		return list(AddNonce, n)
 	else
 		return n
 	end
+end
+
+--- DOCME
+function M.Add (list, n)
+	Validate(list)
+
+	return AuxAdd(list, n)
 end
 
 --
@@ -69,13 +79,19 @@ end
 
 local CheckNonce
 
---- DOCME
-function M.Check (list, n)
+local function AuxCheck (list, n)
 	if list then
 		return list(CheckNonce, n)
 	else
 		return 0
 	end
+end
+
+--- DOCME
+function M.Check (list, n)
+	Validate(list)
+
+	return AuxCheck(list, n)
 end
 
 --
@@ -89,7 +105,7 @@ local function AuxList (list, index)
 		local func = list and list(ActionNonce, "get")
 
 		if func then
-			return 0, func -- n.b. next iteration will try (and fail) compound branch
+			return 0, func -- n.b. next iteration will pose as compound function, and fail
 		end
 	else
 		local func = list(IndexNonce, index + 1)
@@ -100,10 +116,16 @@ local function AuxList (list, index)
 	end
 end
 
+local function AuxIterateList (list)
+	return AuxList, list, list and list(IndexNonce)
+end
+
 --- DOCME
 -- @treturn iterator X
 function M.IterateList (list)
-	return AuxList, list, list and list(IndexNonce)
+	Validate(list)
+
+	return AuxIterateList(list)
 end
 
 --
@@ -117,9 +139,9 @@ local Specials = {}
 local function Box (func, env)
 	local box = remove(BoxesStash)
 
-	if box then
+	if box then -- reuse?
 		box(ActionNonce, func, env)
-	else
+	else -- creation
 		function box (k, a, b)
 			local special = Specials[k]
 
@@ -140,8 +162,8 @@ local function Box (func, env)
 					a, b, func, env = func, env
 
 					return a, b
-				else
-					func, env = a, b -- N.B. captured at first, thus only need this on reuse
+				else -- reuse case, see above
+					func, env = a, b -- n.b. on creation, these were captured instead
 				end
 			elseif special ~= "index" and a > 0 then -- a: count
 				return env(special, 1)
@@ -162,23 +184,19 @@ local function DefEnv (what, n, expected)
 	elseif what == "count" then
 		return 0, 1 / 0
 	else
-		print("Expected to make " .. expected .. " calls but only did " .. n)
+		print("Expected to make " .. expected .. " calls but only performed " .. n)
 	end
 end
 
 local function MaybeNil (name)
-	if name == nil then
-		return NilKey
-	else
-		return name
-	end
+	return name == nil and NilKey or name
 end
 
 --
 --
 --
 
--- Arbitrarily use internal objects as nonces.
+-- Reuse arbitrary internal objects as nonces.
 NilKey = Specials
 ActionNonce = BoxesStash
 AddNonce = Environments
@@ -202,15 +220,15 @@ function M.MakePerObjectList (name)
 	local env, object_to_list, list = Environments[MaybeNil(name)] or DefEnv, meta.WeakKeyed()
 
 	return function(func, object)
-		local curf = object_to_list[object]
+		local underlying_func = object_to_list[object]
 
-		if curf then -- not the very first function?
+		if underlying_func then -- not the very first function?
 			if not list then -- second function?
-				local func = curf(ActionNonce, "extract") -- throw away environment
+				local func = underlying_func(ActionNonce, "extract") -- n.b. throw away environment
 
-				list, BoxesStash[#BoxesStash + 1] = { func }, curf
+				list, BoxesStash[#BoxesStash + 1] = { func }, underlying_func -- recycle hollowed-out simple function...
 
-				object_to_list[object] = function(k, arg)
+				local function CompoundFunc (k, arg) -- ...replace with compound one
 					local special = Specials[k]
 
 					if not special then
@@ -238,11 +256,15 @@ function M.MakePerObjectList (name)
 						return env(special, min(arg, #list))
 					end
 				end
+
+				object_to_list[object], Mode[CompoundFunc], Mode[underlying_func] = CompoundFunc, "compound"
 			end
 
 			list[#list + 1] = func
 		else -- first one
-			object_to_list[object] = Box(func, env)
+			local simple_func = Box(func, env)
+
+			object_to_list[object], Mode[simple_func] = simple_func, "simple"
 		end
 	end, object_to_list
 end
@@ -264,7 +286,7 @@ Dispatcher.__index = Dispatcher
 -- @uint n
 -- @treturn uint X
 function Dispatcher:AddForObject (object, n)
-	return _Add_(self.m_object_to_list[object], n)
+	return AuxAdd(self.m_object_to_list[object], n)
 end
 
 --
@@ -276,7 +298,7 @@ end
 -- @uint n
 -- @treturn uint X
 function Dispatcher:CheckForObject (object, n)
-	return _Check_(self.m_object_to_list[object], n)
+	return AuxCheck(self.m_object_to_list[object], n)
 end
 
 --
@@ -313,7 +335,7 @@ end
 -- @param object
 -- @treturn iterator Y
 function Dispatcher:IterateFunctionsForObject (object)
-    return _IterateList_(self.m_object_to_list[object])
+    return AuxIterateList(self.m_object_to_list[object])
 end
 
 --
@@ -379,9 +401,6 @@ end
 --
 --
 
-_Add_ = M.Add
-_Check_ = M.Check
-_IterateList_ = M.IterateList
 _MakePerObjectList_ = M.MakePerObjectList
 
 return M
