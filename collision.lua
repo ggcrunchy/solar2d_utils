@@ -323,7 +323,7 @@ end)
 --
 --
 
-Runtime:addEventListener("reset_level", EnterLevel)
+Runtime:addEventListener("reset", EnterLevel)
 
 --
 --

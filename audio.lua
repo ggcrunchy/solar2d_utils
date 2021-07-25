@@ -638,7 +638,7 @@ end)
 --
 --
 
-Runtime:addEventListener("reset_level", function()
+Runtime:addEventListener("reset", function()
 	for _, group in ipairs(Groups) do
 		if IsQuiet then
 			StopAllQuiet(group)
