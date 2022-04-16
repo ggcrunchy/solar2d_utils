@@ -160,7 +160,7 @@ end
 --
 --
 
---- Assigns the time lapse functions used by @{Body_Timed}.
+--- Assign the time lapse functions used by @{Body_Timed}.
 --
 -- The lapse function tells us how much time is available **right now** to run a timed body
 -- operation. It may be the case that only some of this is needed: a useful abstraction
@@ -209,9 +209,9 @@ end
 --
 
 local function Clamp (lapse, total)
-    assert(lapse >= 0, "Lapse must be non-negative")
+  assert(lapse >= 0, "Lapse must be non-negative")
 
-    return lapse <= total and lapse or total
+  return lapse <= total and lapse or total
 end
 
 local function NoDeduct () end
@@ -278,9 +278,9 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 		-- If the loop is ready to terminate, narrow the lapse to the time actually spent.
 		-- By default, we assume the iteration ended immediately; however, amounts up to
 		-- the current value are allowed (capping anything higher).
-        if finished then
-            lapse = Clamp(spent_finishing or 0, lapse)
-        end
+    if finished then
+      lapse = Clamp(spent_finishing or 0, lapse)
+    end
 
 		-- Perform any user-defined update, if any time remains on this iteration. If this
 		-- triggers an early out from the loop, we might want to narrow the lapse further.
@@ -291,9 +291,9 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 
 			uresult, spent_updating = update(arg1, arg2, arg3)
 
-            if uresult == "done" and spent_updating then
-                lapse = Clamp(spent_updating, lapse)
-            end
+      if uresult == "done" and spent_updating then
+        lapse = Clamp(spent_updating, lapse)
+      end
 		end
 
 		deduct(lapse)
@@ -301,10 +301,10 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 		if finished or uresult == "done" then
 			return uresult ~= "done" -- an early out trumps finishing, even when both conditions hold
 		else
-            time = time + lapse
+      time = time + lapse
 
-            yield(yvalue)
-        end
+      yield(yvalue)
+    end
 	end
 end
 

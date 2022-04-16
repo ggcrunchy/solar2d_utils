@@ -91,23 +91,28 @@ local function Check (object)
 	end
 end
 
-local function AddToList (object, other, func)
-	Check(object)
-
-	local list = Partners[object] or {}
-
-	Partners[object], list[other] = list, func
+local function GetList (object)
+  return Partners[object]
 end
 
-local function InList (object, other)
-	local list = Partners[object]
+local function SetList (object, list)
+  Check(object)
 
+  Partners[object] = list
+end
+
+local function AddToList (list, other, func)
+	list = list or {}
+	list[other] = func
+
+  return list
+end
+
+local function InList (list, other)
 	return list and list[other]
 end
 
-local function RemoveFromList (object, other)
-	local list = Partners[object]
-
+local function RemoveFromList (list, other)
 	if list then
 		list[other] = nil
 	end
@@ -119,11 +124,12 @@ function M.DoOrDefer (object, other, phase, func)
 		-- Phase "began", objects intact: if at least one of the objects is hidden, defer the
 		-- action; otherwise, perform it immediately.
 		if phase == "began" then
-			--
-			AddToList(object, other, func)
+			SetList(object, AddToList(GetList(object), other, func))
 
-			if not InList(other, object) then
-				AddToList(other, object, false)
+      local other_list = GetList(other)
+
+			if not InList(other_list, object) then
+				SetList(other, AddToList(other_list, object, false))
 			end
 
 			--
@@ -135,8 +141,8 @@ function M.DoOrDefer (object, other, phase, func)
 
 		-- Phase "ended", objects intact: break pairings.
 		else
-			RemoveFromList(object, other)
-			RemoveFromList(other, object)
+			RemoveFromList(GetList(object), other)
+			RemoveFromList(GetList(other), object)
 		end
 	end
 end
@@ -158,7 +164,7 @@ function M.Enable (object, show)
 
 		--
 		elseif is_hidden then
-			local list1 = Partners[object]
+			local list1 = GetList(object)
 
 			if list1 then
 				local is_immediate = is_hidden == "immediate"
@@ -167,13 +173,13 @@ function M.Enable (object, show)
 					local intact = display.isValid(other)
 
 					if not (intact and IsHidden[other]) then
-						if intact then
+						if intact then -- TODO: if this is right, the previous line seems a little off?
 							if func then
 								func(object, other, is_immediate)
 							end
 
 							--
-							local list2 = Partners[other]
+							local list2 = GetList(other)
 							local func2 = list2 and list2[object]
 
 							if func2 then

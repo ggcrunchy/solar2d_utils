@@ -93,6 +93,40 @@ end
 --
 --
 
+--- DOCME
+function M.WithDelta (func)
+  local last
+
+  return function(event)
+    local now = event.time
+
+    func(last and (now - last) / 1000 or 0, event)
+
+    last = now
+  end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.WithDeltaMS (func)
+  local last
+
+  return function(event)
+    local now = event.time
+
+    func(last and now - last or 0, event)
+
+    last = now
+  end
+end
+
+--
+--
+--
+
 local function DefError (err, _) error(err) end
 
 --- Kick off a coroutine-based timer, allowing _func_ to proceed using @{coroutine.yield}.

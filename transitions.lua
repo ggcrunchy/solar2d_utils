@@ -146,7 +146,7 @@ end
 --
 --
 
---- Kicks off a transition and waits until it has finished.
+--- Kick off a transition and wait until it finishes.
 --
 -- This must be called within a coroutine.
 -- @param target Object to transition.
