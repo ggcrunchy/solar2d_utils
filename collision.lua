@@ -37,8 +37,10 @@ local Runtime = Runtime
 -- Solar2D modules --
 local physics = require("physics")
 
+-- Plugins --
+local bit = require("plugin.bit")
+
 -- Cached module references --
-local _Enable_
 local _GetType_
 
 -- Exports --
@@ -126,7 +128,7 @@ end
 local Hidden = {}
 
 local function IsHidden (object)
-  return Hidden[object]
+  return (Hidden[object] or 0) ~= 0
 end
 
 local function NeitherHidden (o1, o2)
@@ -275,13 +277,17 @@ local function AuxEnable (arr, object)
   return n
 end
 
-local function SetHidden (object, hide)
+local function SetHidden (object, hide, mask)
+  local cur = Hidden[object] or 0
+
   if hide then
     EnsureConnectionList(object)
 
-    Hidden[object] = true
+    Hidden[object] = bit.bor(cur, mask)
   elseif IsHidden(object) then
-    Hidden[object] = nil
+    cur = bit.band(cur, bit.bnot(mask))
+
+    Hidden[object] = cur ~= 0 and cur or nil
   end
 end
 
@@ -299,14 +305,13 @@ end
 
 local EnableStack = {}
 
---- DOCME
-function M.Enable (object, show)
+local function DoEnable (object, show, mask)
 	if display.isValid(object) then
     local was_hidden = IsHidden(object)
 
-		SetHidden(object, not show)
+		SetHidden(object, not show, mask)
 
-		if show and was_hidden then
+		if was_hidden and not IsHidden(object) then
       local arr = remove(EnableStack) or {}
       local n = AuxEnable(arr, object)
     
@@ -315,6 +320,13 @@ function M.Enable (object, show)
       EnableStack[#EnableStack + 1] = arr
 		end
 	end
+end
+
+local AllOnes = bit.bnot(0)
+
+--- DOCME
+function M.Enable (object, show, mask)
+  DoEnable(object, show, AllOnes)
 end
 
 --
@@ -349,6 +361,15 @@ local Types = {}
 -- @see SetType
 function M.GetType (object)
   return display.isValid(object) and Types[object] or nil -- fallthrough if untyped
+end
+
+--
+--
+--
+
+--- DOCME
+function M.HideBits (object, mask)
+  DoEnable(object, false, mask)
 end
 
 --
@@ -431,6 +452,15 @@ function M.SetType (object, type)
 
     Types[object] = type
   end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.ShowBits (object, mask)
+  DoEnable(object, true, mask)
 end
 
 --
@@ -546,7 +576,6 @@ end
 --
 --
 
-_Enable_ = M.Enable
 _GetType_ = M.GetType
 
 return M
