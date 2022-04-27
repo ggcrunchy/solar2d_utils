@@ -558,7 +558,9 @@ end)
 --
 --
 
-function WipeState (object)
+function WipeState (event)
+  local object = event.target
+
   for other in pairs(ConnectionLists) do
     local other_connections = GetConnectionList(other)
 
