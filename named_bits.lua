@@ -55,14 +55,16 @@ end
 
 --- Build or retrieve a (one-bit) bitmask from a friendly name.
 --
--- If _name_ is new, it is mapped to the next available mask. If the bit limit has
--- already been hit, an error is thrown.
+-- If _name_ is new, it is mapped to the next available mask and returned. If the bit limit
+-- has already been hit, an error is thrown.
 -- @param name
+-- @string[opt] how If this is **"peek"** and _name_ is new, a mask of `0` is retrieved in
+-- lieu of mapping a new value.
 -- @treturn uint Bitmask.
-function NamedBits:GetBitmask (name)
+function NamedBits:GetBitmask (name, how)
   local mask = self.m_masks[name]
 
-  if name ~= nil and not mask then -- new?
+  if name ~= nil and not mask and how ~= "peek" then -- new?
     local used, n = self.m_used, self.m_nbits
 
 		CheckLimit(used < n, n)
@@ -126,12 +128,12 @@ end
 --
 
 --- Prepare a named bit collection.
--- @uint n Number of names / masks the collection may hold.
+-- @uint[opt=32] n Number of names / masks the collection may hold, &isin; [1, 32].
 -- @treturn NamedBits Named bit collection.
 function M.New (n)
-  assert(n > 0, "Maximum must be positive integer")
+  assert(n == nil or (n > 0 and n <= 32), "Count must be positive integer, <= 32")
 
-  local named_bits = { m_masks = {}, m_used = 0, m_nbits = n }
+  local named_bits = { m_masks = {}, m_used = 0, m_nbits = n or 32 }
 
 	return setmetatable(named_bits, NamedBits)
 end
