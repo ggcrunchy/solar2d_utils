@@ -86,7 +86,7 @@ end
 
 --- DOCME
 M.ActivateLater = MakeDeferred(function(object)
-	object.isBodyActive = true
+	object.isAwake, object.isBodyActive = true, true -- wake in case objects already overlap
 end)
 
 --
