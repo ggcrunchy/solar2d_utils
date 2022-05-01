@@ -56,11 +56,11 @@ local function Validate (list)
 	assert(list == nil or Mode[list], "List function must originate from MakePerObjectList() or Dispatcher:GetAdder()")
 end
 
-local AddNonce
+local AddCookie
 
 local function AuxAdd (list, n)
 	if list then
-		return list(AddNonce, n)
+		return list(AddCookie, n)
 	else
 		return n
 	end
@@ -77,11 +77,11 @@ end
 --
 --
 
-local CheckNonce
+local CheckCookie
 
 local function AuxCheck (list, n)
 	if list then
-		return list(CheckNonce, n)
+		return list(CheckCookie, n)
 	else
 		return 0
 	end
@@ -98,17 +98,17 @@ end
 --
 --
 
-local ActionNonce, IndexNonce
+local ActionCookie, IndexCookie
 
 local function AuxList (list, index)
 	if not index then -- simple function?
-		local func = list and list(ActionNonce, "get")
+		local func = list and list(ActionCookie, "get")
 
 		if func then
 			return 0, func -- n.b. next iteration will pose as compound function, and fail
 		end
 	else
-		local func = list(IndexNonce, index + 1)
+		local func = list(IndexCookie, index + 1)
 
 		if func then -- compound function and within bounds?
 			return index + 1, func
@@ -117,7 +117,7 @@ local function AuxList (list, index)
 end
 
 local function AuxIterateList (list)
-	return AuxList, list, list and list(IndexNonce)
+	return AuxList, list, list and list(IndexCookie)
 end
 
 --- DOCME
@@ -140,7 +140,7 @@ local function Box (func, env)
 	local box = remove(BoxesStash)
 
 	if box then -- reuse?
-		box(ActionNonce, func, env)
+		box(ActionCookie, func, env)
 	else -- creation
 		function box (k, a, b)
 			local special = Specials[k]
@@ -198,15 +198,15 @@ end
 
 -- Reuse arbitrary internal objects as nonces.
 NilKey = Specials
-ActionNonce = BoxesStash
-AddNonce = Environments
-CheckNonce = DefEnv
-IndexNonce = MaybeNil
+ActionCookie = BoxesStash
+AddCookie = Environments
+CheckCookie = DefEnv
+IndexCookie = MaybeNil
 
-Specials[ActionNonce] = "action"
-Specials[AddNonce] = "add"
-Specials[CheckNonce] = "check"
-Specials[IndexNonce] = "index"
+Specials[ActionCookie] = "action"
+Specials[AddCookie] = "add"
+Specials[CheckCookie] = "check"
+Specials[IndexCookie] = "index"
 
 --
 --
@@ -224,7 +224,7 @@ function M.MakePerObjectList (name)
 
 		if underlying_func then -- not the very first function?
 			if not list then -- second function?
-				local func = underlying_func(ActionNonce, "extract") -- n.b. throw away environment
+				local func = underlying_func(ActionCookie, "extract") -- n.b. throw away environment
 
 				list, BoxesStash[#BoxesStash + 1] = { func }, underlying_func -- recycle hollowed-out simple function...
 
