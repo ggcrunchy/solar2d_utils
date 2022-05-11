@@ -37,6 +37,7 @@ local yield = coroutine.yield
 local _get_func = {}
 
 -- Solar2D globals --
+local Runtime = Runtime
 local timer = timer
 
 -- Cached module references --
@@ -93,9 +94,15 @@ end
 --
 --
 
+local function InitLast (how)
+  if how == "frame_start" then
+    return Runtime.getFrameStartTime()
+  end
+end
+
 --- DOCME
-function M.WithDelta (func)
-  local last
+function M.WithDelta (func, how)
+  local last = InitLast(how)
 
   return function(event)
     local now = event.time
@@ -111,13 +118,47 @@ end
 --
 
 --- DOCME
-function M.WithDeltaMS (func)
-  local last
+function M.WithDelta_Self (func, how)
+  local last = InitLast(how)
+
+  return function(object, event)
+    local now = event.time
+
+    func(object, last and (now - last) / 1000 or 0, event)
+
+    last = now
+  end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.WithDeltaMS (func, how)
+  local last = InitLast(how)
 
   return function(event)
     local now = event.time
 
     func(last and now - last or 0, event)
+
+    last = now
+  end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.WithDeltaMS_Self (func, how)
+  local last = InitLast(how)
+
+  return function(object, event)
+    local now = event.time
+
+    func(object, last and now - last or 0, event)
 
     last = now
   end
