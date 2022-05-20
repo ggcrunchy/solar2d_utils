@@ -155,11 +155,13 @@ end
 -- @{coro_flow.WaitWhile}.
 --
 -- If the wait is aborted during the update, the transition is cancelled.
-function M.DoAndWait (target, params, update)
+function M.DoAndWait (target, params, update, arg)
 	local handle, event1, event2 = AuxDoAndWait(target, params)
 
 	-- Wait for the transition to finish, performing any user-provided update.
-	if not coro_flow.WaitWhile(DoingTransition, update, handle) then
+  coro_flow.SetDoneArg(handle)
+
+	if not coro_flow.WaitWhile(DoingTransition, update, target, arg) then
 		transition.cancel(handle)
 
 		-- Yield to accommodate the cancel listener.
@@ -192,71 +194,36 @@ local MT = {
 	__newindex = function(proxy, _, t)
 		proxy.m_t = t
 
-		proxy.m_func(t, proxy.m_arg)
+		proxy.m_func(t, proxy.arg)
 	end
 }
 
-local function OnDone (proxy)
-	proxy.m_done(proxy.m_arg)
-end
+local Keys = { "delay", "delta", "iterations", "onCancel", "onComplete", "onRepeat", "onStart", "tag", "time", "transition" }
 
-local Params = {
-	t = 1,
+local ParamsCache = {}
 
-	onStart = function(proxy)
-		proxy.m_t = 0
-	end
-}
-
--- Standard non-listener keys --
-local Keys = { "delay", "delta", "iterations", "tag", "time", "transition" }
-
-local function AuxProxy (func, options, arg, done)
-	local proxy = setmetatable({ m_func = func, m_t = false, m_arg = arg or false, m_done = done or false }, MT)
+--- DOCME
+function M.Proxy (func, options, arg)
+	local proxy = setmetatable({ m_func = func, m_t = 0, arg = arg }, MT)
+  local params = remove(ParamsCache) or {}
 
 	for i = 1, #(options and Keys or "") do
 		local k = Keys[i]
 
-		Params[k] = options[k] or Params[k]
+		params[k] = options[k]
 	end
 
-	local handle = transition.to(proxy, Params)
+  params.t = 1
 
-	for k in pairs(Params) do
-		if k ~= "onStart" and k ~= "t" then
-			Params[k] = nil
-		end
+	local handle = transition.to(proxy, params)
+
+	for k in pairs(params) do
+    params[k] = nil
 	end
+
+  ParamsCache[#ParamsCache + 1] = params
 
 	return handle
-end
-
---- DOCME
-function M.Proxy (func, options, arg)
-	return AuxProxy(func, options, arg)
-end
-
---
---
---
-
---- DOCME
-function M.Proxy_Done (func, on_done, options, arg)
-	Params.onComplete = OnDone
-
-	return AuxProxy(func, options, arg, on_done)
-end
-
---
---
---
-
---- DOCME
-function M.Proxy_Repeat (func, on_done, options, arg)
-	Params.onRepeat = OnDone
-	Params.iterations = 0
-
-	return AuxProxy(func, options, arg, on_done)
 end
 
 --

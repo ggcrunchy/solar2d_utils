@@ -44,6 +44,24 @@ local M = {}
 --
 --
 
+local DoneArg, DoneArgIndex
+
+local function GetDoneArgs (arg1, arg2, arg3)
+  local darg1, darg2, darg3 = arg1, arg2, arg3
+
+  if DoneArgIndex == 1 then
+    darg1 = DoneArg
+  elseif DoneArgIndex == 2 then
+    darg2 = DoneArg
+  elseif DoneArgIndex == 3 then
+    darg3 = DoneArg
+  end
+
+  DoneArg, DoneArgIndex = nil
+
+  return darg1, darg2, darg3
+end
+
 local ShouldNegate, YieldValue
 
 --- Body for control flow operations.
@@ -72,12 +90,13 @@ function M.BasicBody (update, done, arg1, arg2, arg3)
 	assert(meta.CanCall(done), "Uncallable done")
 	assert(update == nil or meta.CanCall(update), "Uncallable update")
 
+  local darg1, darg2, darg3 = GetDoneArgs(arg1, arg2, arg3)
 	local yvalue, notted = YieldValue, not not ShouldNegate -- coerce to boolean: will agree with `not done()` when we pass
 
 	ShouldNegate, YieldValue = nil
 
 	while true do
-		if not done(arg1, arg2, arg3) == notted then -- finished? (see note above)
+		if not done(darg1, darg2, darg3) == notted then -- finished? (see note above)
 			return true
 		elseif update ~= nil and update(arg1, arg2, arg3) == "done" then -- early out?
 			return false
@@ -154,6 +173,15 @@ function M.MakeLocalStorage ()
 			list[coro] = value
 		end
 	end
+end
+
+--
+--
+--
+
+--- DOCME
+function M.SetDoneArg (arg, index)
+  DoneArg, DoneArgIndex = arg, index
 end
 
 --
@@ -251,7 +279,7 @@ local function NoLapse () return 0 end
 -- _time\_state_ is as per _update_, except the **lapse** amount will be the initial value
 -- for the current iteration.
 --
--- @ptable config As per @{BasicBody}, though a **use_time** field is also examined. If this is
+-- @ptable config As per @{BasicBody}, a **use_time** field is also examined. If this is
 -- true, _done_ accepts the _time\_state_ argument and handles _true\_lapse_ on termination.
 -- @param arg1 Argument #1...
 -- @param arg2 ...#2...
@@ -262,6 +290,7 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 	assert(meta.CanCall(done), "Uncallable done")
 	assert(update == nil or meta.CanCall(update), "Uncallable update")
 
+  local darg1, darg2, darg3 = GetDoneArgs(arg1, arg2, arg3)
 	local time, yvalue, notted = 0, YieldValue, not not ShouldNegate -- cf. note in BasicBody()
 	local func, deduct = Lapse or NoLapse, Deduct or NoDeduct
 
@@ -272,7 +301,7 @@ function M.TimedBody (update, done, arg1, arg2, arg3)
 
 		IterationTime, IterationLapse = time, lapse -- make available to GetIteration*
 
-		local dresult, spent_finishing = done(arg1, arg2, arg3)
+		local dresult, spent_finishing = done(darg1, darg2, darg3)
 		local finished = not dresult == notted -- cf. note in BasicBody()
 
 		-- If the loop is ready to terminate, narrow the lapse to the time actually spent.
@@ -330,6 +359,8 @@ end
 -- @param arg Argument.
 -- @treturn boolean The wait completed?
 function M.Wait (duration, update, arg)
+  DoneArgIndex = nil
+
 	return _TimedBody_(update, AuxWait, duration, arg)
 end
 
@@ -349,16 +380,19 @@ local function Index (t, k)
 	return t[k]
 end
 
---- Wait until `test(arg)` is true.
+--- Wait until `test(arg1, arg2)` is true.
 -- @callable test Test function, with the same signature as _update_. If it returns
 -- true, the wait terminates.
 -- @tparam ?|callable|nil update Optional update logic, called as
---    update(arg)
--- @param arg Argument.
+--    update(arg1, arg2)
+-- @param arg1 Argument #1...
+-- @param arg2 ...and #2.
 -- @treturn boolean The test passed?
 -- @see SetUsingTime
-function M.WaitUntil (test, update, arg)
-	return ChooseBody()(update, test, arg)
+function M.WaitUntil (test, update, arg1, arg2)
+  DoneArgIndex = DoneArg ~= nil and 1
+
+	return ChooseBody()(update, test, arg1, arg2)
 end
 
 --
@@ -374,6 +408,8 @@ end
 -- @treturn boolean The property became true?
 -- @see SetUsingTime
 function M.WaitUntilPropertyTrue (object, name, update, arg)
+  DoneArgIndex = nil
+
 	return ChooseBody()(update, Index, object, name, arg)
 end
 
@@ -381,18 +417,19 @@ end
 --
 --
 
---- Wait while `test(arg)` is true.
+--- Wait while `test(arg1, arg2)` is true.
 -- @callable test Test function, with the same signature as _update_. If it returns
 -- false, the wait terminates.
 -- @tparam ?|callable|nil update Optional update logic, called as
---    update(arg)
--- @param arg Argument.
+--    update(arg1, arg2)
+-- @param arg1 Argument #1...
+-- @param arg2 ...and #2.
 -- @treturn boolean The test returned false?
 -- @see SetUsingTime
-function M.WaitWhile (test, update, arg)
-	ShouldNegate = true
+function M.WaitWhile (test, update, arg1, arg2)
+	ShouldNegate, DoneArgIndex = true, DoneArg ~= nil and 1
 
-	return ChooseBody()(update, test, arg)
+	return ChooseBody()(update, test, arg1, arg2)
 end
 
 --
@@ -410,7 +447,7 @@ end
 -- @treturn boolean The property became false?
 -- @see SetUsingTime
 function M.WaitWhilePropertyTrue (object, name, update, arg)
-	ShouldNegate = true
+	ShouldNegate, DoneArgIndex = true
 
 	return ChooseBody()(update, Index, object, name, arg)
 end
