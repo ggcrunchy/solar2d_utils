@@ -33,7 +33,6 @@ local yield = coroutine.yield
 
 -- Modules --
 local coro_flow = require("solar2d_utils.coro_flow")
-local meta = require("tektite_core.table.meta")
 
 -- Solar2D globals --
 local transition = transition
@@ -48,26 +47,18 @@ local M = {}
 --
 --
 
--- Current state of transition handle, if any --
-local HandleState = meta.WeakKeyed()
-
--- Helper to report to flow operation when a transition has completed
-local function DoingTransition (handle)
-	return HandleState[handle] == "doing"
-end
-
--- Cache of cancel / complete events --
 local EventCache = {}
 
--- Builds a resettable event to detect cancelled / completed transitions
-local function OnEvent ()
-	local func, handle, how
+local EventCookie = EventCache -- arbitrary
 
-	return function(target, arg1, arg2, arg3)
-		if rawequal(target, EventCache) then
-			func, handle, how = arg1, arg2, arg3
+local function OnComplete ()
+	local func, handle
+
+	return function(target, arg1, arg2)
+		if rawequal(target, EventCookie) then
+			func, handle = arg1, arg2
 		else
-			HandleState[handle] = how
+      handle._transitionHasCompleted = true -- broken in transition module, so spoof expected result
 
 			if func then
 				func(target)
@@ -77,54 +68,52 @@ local function OnEvent ()
 end
 
 local function AuxDoAndWait (target, params)
-	local event1, func1 = remove(EventCache) or OnEvent(), params.onCancel
-	local event2, func2 = remove(EventCache) or OnEvent(), params.onComplete
+  -- A transition will run until either being cancelled or completed, firing a callback in
+  -- either case. Cancels actually set a flag, but an onComplete handler is needed in that
+  -- situation due to a slight bug, i.e. _transitionHasCompleted is never set to true.
+	local event, func = remove(EventCache) or OnComplete(), params.onComplete
 
-	-- Install transition-aware handlers into the parameters and launch the transition.
-	params.onCancel, params.onComplete = event1, event2
+	params.onComplete = event
 
+  -- Fire the transition and flag it as active.
 	local handle = transition.to(target, params)
 
-	HandleState[handle] = "doing"
+	handle.m_doing_transition = true
 
-	-- The previous steps may have evicted the user-provided handlers; if so, references to said
-	-- handlers are passed along to the overrides, to be called after doing their own work. The
-	-- transition handle is also sent, so that it can be flagged once the transition is ended.
-	event1(EventCache, func1, handle, "cancelled")
-	event2(EventCache, func2, handle, "completed")
+  -- Piggyback any user-provided onComplete on the handler.
+	event(EventCookie, func, handle)
 
-	-- Restore the user-provided handlers.
-	params.onCancel, params.onComplete = func1, func2
+	-- Undo any change to the params.
+	params.onComplete = func
 
-	return handle, event1, event2
+	return handle, event
 end
 
-local function Cleanup (event1, event2)
-	-- Remove all transition state and put the events into the cache.
-	event1(EventCache, nil)
-	event2(EventCache, nil)
+local function Cleanup (event)
+	event(EventCookie, nil)
 
-	EventCache[#EventCache + 1] = event1
-	EventCache[#EventCache + 1] = event2
+	EventCache[#EventCache + 1] = event
 end
 
 local Pollers = {}
 
---- DOCME
-function M.DoAndPoll (target, params)
-	local first, handle, event1, event2
-	local poll = remove(Pollers) or function(arg1, arg2, arg3)
-		if rawequal(arg1, Pollers) then
-			first, handle, event1, event2 = true, AuxDoAndWait(arg2, arg3)
+local PollerCookie = Pollers -- arbitrary
+
+local function MakePoller ()
+  local first, handle, event
+
+	return function(arg1, arg2, arg3)
+		if rawequal(arg1, PollerCookie) then
+			first, handle, event = true, AuxDoAndWait(arg2, arg3)
+
+      return handle
 		else
 			assert(handle, "Already done polling")
 
-			local state = _GetState_(handle)
+			if _GetState_(handle) ~= "doing" then
+				Cleanup(event)
 
-			if state == "cancelled" or state == "completed" then
-				Cleanup(event1, event2)
-
-				handle, event1, event2 = nil
+				handle, event = nil
 
 				return false
 			elseif first then
@@ -136,15 +125,22 @@ function M.DoAndPoll (target, params)
 			return true
 		end
 	end
+end
 
-	poll(Pollers, target, params)
+--- DOCME
+function M.DoAndPoll (target, params)
+	local poll = remove(PollerCookie) or MakePoller()
 
-	return poll, handle
+	return poll, poll(Pollers, target, params)
 end
 
 --
 --
 --
+
+local function DoingTransition (handle)
+	return _GetState_(handle) == "doing"
+end
 
 --- Kick off a transition and wait until it finishes.
 --
@@ -156,21 +152,18 @@ end
 --
 -- If the wait is aborted during the update, the transition is cancelled.
 function M.DoAndWait (target, params, update, arg)
-	local handle, event1, event2 = AuxDoAndWait(target, params)
+	local handle, event = AuxDoAndWait(target, params)
 
 	-- Wait for the transition to finish, performing any user-provided update.
   coro_flow.SetDoneArg(handle)
 
 	if not coro_flow.WaitWhile(DoingTransition, update, target, arg) then
 		transition.cancel(handle)
-
-		-- Yield to accommodate the cancel listener.
-		yield()
 	end
 
-	Cleanup(event1, event2)
+	Cleanup(event)
 
-	return HandleState[handle]
+	return _GetState_(handle)
 end
 
 --
@@ -179,14 +172,20 @@ end
 
 --- DOCME
 function M.GetState (handle)
-	return HandleState[handle] or "none"
+  if handle._cancelled then -- q.v. transition library source
+    return "cancelled"
+  elseif handle._transitionHasCompleted then -- cf. OnComplete()
+    return "completed"
+  else
+    return handle.m_doing_transition and "doing" or "none"
+  end
 end
 
 --
 --
 --
 
-local MT = {
+local ProxyMT = {
 	__index = function(proxy, _)
 		return proxy.m_t
 	end,
@@ -198,13 +197,17 @@ local MT = {
 	end
 }
 
-local Keys = { "delay", "delta", "iterations", "onCancel", "onComplete", "onRepeat", "onStart", "tag", "time", "transition" }
+local Keys = {
+  "delay", "delta", "iterations",
+  "onCancel", "onComplete", "onPause", "onRepeat", "onResume", "onStart",
+  "tag", "time", "transition"
+}
 
 local ParamsCache = {}
 
 --- DOCME
 function M.Proxy (func, options, arg)
-	local proxy = setmetatable({ m_func = func, m_t = 0, arg = arg }, MT)
+	local proxy = setmetatable({ m_func = func, m_t = 0, arg = arg }, ProxyMT)
   local params = remove(ParamsCache) or {}
 
 	for i = 1, #(options and Keys or "") do
