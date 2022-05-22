@@ -26,19 +26,22 @@
 -- Standard library imports --
 local assert = assert
 local pairs = pairs
-local rawequal = rawequal
 local remove = table.remove
 local setmetatable = setmetatable
-local yield = coroutine.yield
+local type = type
 
 -- Modules --
 local coro_flow = require("solar2d_utils.coro_flow")
 
 -- Solar2D globals --
+local Runtime = Runtime
 local transition = transition
 
 -- Cached module references --
-local _GetState_
+local _IsActive_
+local _IsCancelled_
+local _IsCompleted_
+local _Wait_
 
 -- Exports --
 local M = {}
@@ -47,137 +50,53 @@ local M = {}
 --
 --
 
-local EventCache = {}
-
-local EventCookie = EventCache -- arbitrary
-
-local function OnComplete ()
-	local func, handle
-
-	return function(target, arg1, arg2)
-		if rawequal(target, EventCookie) then
-			func, handle = arg1, arg2
-		else
-      handle._transitionHasCompleted = true -- broken in transition module, so spoof expected result
-
-			if func then
-				func(target)
-			end
-		end
-	end
-end
-
-local function AuxDoAndWait (target, params)
-  -- A transition will run until either being cancelled or completed, firing a callback in
-  -- either case. Cancels actually set a flag, but an onComplete handler is needed in that
-  -- situation due to a slight bug, i.e. _transitionHasCompleted is never set to true.
-	local event, func = remove(EventCache) or OnComplete(), params.onComplete
-
-	params.onComplete = event
-
-  -- Fire the transition and flag it as active.
-	local handle = transition.to(target, params)
-
-	handle.m_doing_transition = true
-
-  -- Piggyback any user-provided onComplete on the handler.
-	event(EventCookie, func, handle)
-
-	-- Undo any change to the params.
-	params.onComplete = func
-
-	return handle, event
-end
-
-local function Cleanup (event)
-	event(EventCookie, nil)
-
-	EventCache[#EventCache + 1] = event
-end
-
-local Pollers = {}
-
-local PollerCookie = Pollers -- arbitrary
-
-local function MakePoller ()
-  local first, handle, event
-
-	return function(arg1, arg2, arg3)
-		if rawequal(arg1, PollerCookie) then
-			first, handle, event = true, AuxDoAndWait(arg2, arg3)
-
-      return handle
-		else
-			assert(handle, "Already done polling")
-
-			if _GetState_(handle) ~= "doing" then
-				Cleanup(event)
-
-				handle, event = nil
-
-				return false
-			elseif first then
-				first = nil
-			else
-				yield()
-			end
-
-			return true
-		end
-	end
-end
-
---- DOCME
-function M.DoAndPoll (target, params)
-	local poll = remove(PollerCookie) or MakePoller()
-
-	return poll, poll(Pollers, target, params)
-end
-
---
---
---
-
-local function DoingTransition (handle)
-	return _GetState_(handle) == "doing"
-end
-
 --- Kick off a transition and wait until it finishes.
 --
 -- This must be called within a coroutine.
--- @param target Object to transition.
--- @ptable params Transition parameters, as per `transition.to`.
--- @callable update Optional update routine, with the transition handle as argument, cf.
--- @{coro_flow.WaitWhile}.
---
--- If the wait is aborted during the update, the transition is cancelled.
+-- @param target As per `transition.to`...
+-- @ptable params ...ditto.
+-- @callable update As per @{Wait}...
+-- @param arg ...ditto.
 function M.DoAndWait (target, params, update, arg)
-	local handle, event = AuxDoAndWait(target, params)
-
-	-- Wait for the transition to finish, performing any user-provided update.
-  coro_flow.SetDoneArg(handle)
-
-	if not coro_flow.WaitWhile(DoingTransition, update, target, arg) then
-		transition.cancel(handle)
-	end
-
-	Cleanup(event)
-
-	return _GetState_(handle)
+	_Wait_(transition.to(target, params), update, arg)
 end
 
 --
 --
 --
 
---- DOCME
-function M.GetState (handle)
-  if handle._cancelled then -- q.v. transition library source
-    return "cancelled"
-  elseif handle._transitionHasCompleted then -- cf. OnComplete()
-    return "completed"
+---
+-- @tparam TransitionHandle handle
+-- @treturn boolean The transition has neither completed nor been cancelled?
+function M.IsActive (handle)
+  return not (_IsCancelled_(handle) or _IsCompleted_(handle))
+end
+
+--
+--
+--
+
+---
+-- @tparam TransitionHandle handle
+-- @treturn boolean The transition was cancelled?
+function M.IsCancelled (handle)
+  return handle._cancelled == true -- q.v. transition library source
+end
+
+--
+--
+--
+
+---
+-- @tparam TransitionHandle handle
+-- @treturn boolean The transition completed?
+function M.IsCompleted (handle)
+  if handle._paused then
+    return false
   else
-    return handle.m_doing_transition and "doing" or "none"
+    local now = Runtime.getFrameStartTime() -- n.b. will be very slightly earlier than currentTime (q.v. transition library source)...
+
+    return now - handle._timeStart >= handle._duration -- ...so this could register a frame late
   end
 end
 
@@ -193,7 +112,7 @@ local ProxyMT = {
 	__newindex = function(proxy, _, t)
 		proxy.m_t = t
 
-		proxy.m_func(t, proxy.arg)
+		proxy.m_update(t, proxy.arg)
 	end
 }
 
@@ -205,26 +124,52 @@ local Keys = {
 
 local ParamsCache = {}
 
---- DOCME
-function M.Proxy (func, options, arg)
-	local proxy = setmetatable({ m_func = func, m_t = 0, arg = arg }, ProxyMT)
-  local params = remove(ParamsCache) or {}
-
-	for i = 1, #(options and Keys or "") do
-		local k = Keys[i]
-
-		params[k] = options[k]
-	end
-
-  params.t = 1
-
-	local handle = transition.to(proxy, params)
-
+local function CacheProxyParams (params)
 	for k in pairs(params) do
     params[k] = nil
 	end
 
   ParamsCache[#ParamsCache + 1] = params
+end
+
+local function PrepareProxyParams (options, n)
+  local params = remove(ParamsCache) or {}
+
+  for i = 1, n do
+    local k = Keys[i]
+
+    params[k] = options[k]
+  end
+
+  params.t = 1
+
+  return params
+end
+
+--- Launch a transition that proxies a hidden time value, with periodic updates.
+-- @tparam ?|ptable|function options This may be a function, called as `update(t, arg)`,
+-- where _t_ is the underlying time, &isin; [0, 1]. Otherwise, as a table it mostly resembles
+-- the parameters used by `transition.to`, except any **t** key is ignored, and the function
+-- just described must instead be provided under the **update** key.
+-- @param[opt] arg Argument to the update routine. This may also be obtained in any
+-- listener, e.g. `onRepeat`, as `object.arg`, with _object_ being the listener's argument.
+-- @treturn TransitionHandle Transition.
+function M.Proxy (options, arg)
+  local n, update = 0
+
+  if type(options) == "table" then
+    update, n = options.update, #Keys
+  else
+    update = options
+  end
+
+  assert(type(update) == "function", "Non-function update")
+
+  local params = PrepareProxyParams(options, n)
+	local proxy = setmetatable({ m_t = 0, m_update = update, arg = arg }, ProxyMT)
+	local handle = transition.to(proxy, params)
+
+  CacheProxyParams(params)
 
 	return handle
 end
@@ -233,6 +178,31 @@ end
 --
 --
 
-_GetState_ = M.GetState
+--- Wait until a transition has finished.
+--
+-- This must be called within a coroutine.
+-- @tparam TransitionHandle handle
+-- @callable update Optional update routine, with _handle_'s target as argument,
+-- cf. @{coro_flow.WaitWhile}.
+--
+-- If the wait is aborted during the update, the transition is cancelled.
+-- @param arg Second argument to @{coro_flow.WaitWhile}.
+-- @see DoAndWait
+function M.Wait (handle, update, arg)
+  coro_flow.SetDoneArg(handle)
+
+	if not coro_flow.WaitWhile(_IsActive_, update, handle._target, arg) then  -- q.v. transition library source
+		transition.cancel(handle)
+	end
+end
+
+--
+--
+--
+
+_IsActive_ = M.IsActive
+_IsCancelled_ = M.IsCancelled
+_IsCompleted_ = M.IsCompleted
+_Wait_ = M.Wait
 
 return M
