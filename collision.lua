@@ -52,12 +52,17 @@ local M = {}
 
 local Deferred = {}
 
+local function IsPhysicsObject (object)
+  return display.isValid(object) and object.setLinearVelocity ~= nil
+end
+
 local function Resolve ()
 	for i = 1, #Deferred, 3 do
-		local object1, object2 = Deferred[i + 1], Deferred[i + 2]
+		local func, object1, object2 = Deferred[i], Deferred[i + 1], Deferred[i + 2]
+    local is_valid = func ~= display.remove and IsPhysicsObject or display.isValid
 
-		if display.isValid(object1) and (not object2 or display.isValid(object2)) then
-			Deferred[i](object1, object2)
+		if is_valid(object1) and (not object2 or is_valid(object2)) then
+			func(object1, object2)
 		end
 	end
 
@@ -426,6 +431,13 @@ function M.RemoveBody (object)
 
   return removed
 end
+
+--
+--
+--
+
+--- DOCME
+M.RemoveLater = MakeDeferred(display.remove)
 
 --
 --
