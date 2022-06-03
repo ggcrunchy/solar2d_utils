@@ -148,9 +148,9 @@ end
 
 --- Launch a transition that proxies a hidden time value, with periodic updates.
 -- @tparam ?|ptable|function options This may be a function, called as `update(t, arg)`,
--- where _t_ is the underlying time, &isin; [0, 1]. Otherwise, as a table it mostly resembles
--- the parameters used by `transition.to`, except any **t** key is ignored, and the function
--- just described must instead be provided under the **update** key.
+-- where _t_ is the underlying time, &isin; [0, 1]. Otherwise, as a table it resembles
+-- the parameters used by `transition.to`, but the function just described must also be
+-- provided under the **update** key.
 -- @param[opt] arg Argument to the update routine. This may also be obtained in any
 -- listener, e.g. `onRepeat`, as `object.arg`, with _object_ being the listener's argument.
 -- @treturn TransitionHandle Transition.
