@@ -152,6 +152,17 @@ end
 --
 
 --- DOCME
+function M.DoIfObjectEnabled (object, other, func)
+  if PairOK(object, other) and not IsHidden(object) then
+    func(object, other, true)
+  end
+end
+
+--
+--
+--
+
+--- DOCME
 M.DoLater = Defer
 
 --
@@ -189,8 +200,10 @@ end
 --
 --
 
-local function AddToPairingsList (list, other, func)
-  list[other] = func
+local function AddToPairingsList (list, other, func, show_anyway)
+  list[#list + 1] = other
+  list[#list + 1] = func
+  list[#list + 1] = show_anyway == true -- boolify
 end
 
 local Pairings = {}
@@ -210,10 +223,42 @@ local function GetOrMakePairingsList (object)
 end
 
 local function RemoveFromPairingsList (list, other)
-	if list then
-		list[other] = nil
+	local n = #(list or "")
+
+  for offset = n - 3, 0, -3 do
+    if list[offset + 1] == other then
+      local new_n = n - 3
+
+      if offset ~= new_n then -- backfill needed?
+        list[offset + 1] = list[n - 2]
+        list[offset + 2] = list[n - 1]
+        list[offset + 3] = list[n]
+      end
+
+      n, list[n - 2], list[n - 1], list[n] = new_n
+    end
 	end
 end
+
+--- DOCME
+function M.DoWhenObjectEnabled (object, other, phase, func)
+	if PairOK(object, other) then
+		if phase == "ended" then
+			RemoveFromPairingsList(GetPairingsList(object), other)
+			RemoveFromPairingsList(GetPairingsList(other), object)
+    else
+      AddToPairingsList(GetOrMakePairingsList(object), other, func, true)
+
+      if not IsHidden(object) then
+        func(object, other, true)
+      end
+    end
+	end
+end
+
+--
+--
+--
 
 --- DOCME
 function M.DoWhenPairEnabled (object, other, phase, func)
@@ -241,11 +286,21 @@ end
 
 local function NoOp() end
 
+local function AuxIterPairings (list, first)
+  first = first + 3
+
+  local other = list[first]
+
+  if other then
+    return first, other, list[first + 1], list[first + 2]
+  end
+end
+
 local function IterPairings (object)
   local list = GetPairingsList(object)
 
   if list then
-    return pairs(list)
+    return AuxIterPairings, list, -2
   else
     return NoOp
   end
@@ -259,8 +314,8 @@ local function AuxEnable (arr, object)
   local n, connections = 0, GetConnectionList(object)
 
   -- Gather object-first pairings.
-  for other, func in IterPairings(object) do
-    if not IsHidden(other) and Intact(connections[other]) then
+  for _, other, func, show_anyway in IterPairings(object) do
+    if (show_anyway or not IsHidden(other)) and Intact(connections[other]) then
       n, arr[n + 1], arr[n + 2], arr[n + 3] = n + 3, func, object, other
     end
   end
@@ -270,11 +325,10 @@ local function AuxEnable (arr, object)
     local other_connections = Intact(state) and not IsHidden(other) and GetConnectionList(other)
 
     if other_connections and Intact(other_connections[object]) then
-      local list = GetPairingsList(other)
-      local func = list and list[object]
-
-      if func then
-        n, arr[n + 1], arr[n + 2], arr[n + 3] = n + 3, func, other, object
+      for _, oobject, func, show_anyway in IterPairings(other) do
+        if oobject == object and not show_anyway then
+          n, arr[n + 1], arr[n + 2], arr[n + 3] = n + 3, func, other, object
+        end
       end
     end
   end
@@ -330,7 +384,7 @@ end
 local AllOnes = bit.bnot(0)
 
 --- DOCME
-function M.Enable (object, show, mask)
+function M.Enable (object, show)
   DoEnable(object, show, AllOnes)
 end
 
