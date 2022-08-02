@@ -463,6 +463,68 @@ end
 --
 --
 
+local function AuxCollision (phase, o1, o2, contact)
+	local h1, h2 = Handlers[_GetType_(o1)], Handlers[_GetType_(o2)]
+
+	if h1 then
+		h1(phase, o1, o2, contact)
+	end
+
+	if h2 then
+		h2(phase, o2, o1, contact)
+	end
+end
+
+local function BreakConnection (o1, o2)
+  local c1, c2 = GetConnectionList(o1), GetConnectionList(o2)
+
+  if c1 then
+    c1[o2] = nil
+  end
+
+  if c2 then
+    c2[o1] = nil
+  end
+end
+
+local function WillBeIntact (state, frame)
+  return state == frame or Intact(state)
+end
+
+local function MakeConnection (o1, o2, frame)
+  -- N.B. getFrameID() has a slight timing bug (it increments after physics)
+  -- with a fix, we would subtract 1 from this ID. Strictly speaking the IDs
+  -- aren't promised to honor this behavior either, though.
+
+	local c1, c2 = EnsureConnectionList(o1), EnsureConnectionList(o2)
+  local fixed = WillBeIntact(c1[o2], frame) and WillBeIntact(c2[o1], frame)
+
+	c1[o2], c2[o1] = true, true
+
+  return fixed
+end
+
+local function OnCollision (o1, o2, phase)
+  if phase == "ended" then
+    BreakConnection(o1, o2)
+  else
+    return MakeConnection(o1, o2, Runtime.getFrameID())
+  end
+end
+
+--- DOCME
+function M.OnEvent(event)
+	local o1, o2, phase = event.object1, event.object2, event.phase
+
+	if OnCollision(o1, o2, phase) ~= true then -- if just fixing a connection, no need to respond
+		AuxCollision(phase, o1, o2, event.contact)
+	end
+end
+
+--
+--
+--
+
 --- Attempt to remove an object's body.
 -- @param object
 -- @treturn boolean Was a body removed?
@@ -536,88 +598,6 @@ end
 --- DOCME
 M.StopLater = MakeDeferred(function(object)
 	object:setLinearVelocity(0, 0)
-end)
-
---
---
---
-
-local function AuxCollision (phase, o1, o2, contact)
-	local h1, h2 = Handlers[_GetType_(o1)], Handlers[_GetType_(o2)]
-
-	if h1 then
-		h1(phase, o1, o2, contact)
-	end
-
-	if h2 then
-		h2(phase, o2, o1, contact)
-	end
-end
-
-local function BreakConnection (o1, o2)
-  local c1, c2 = GetConnectionList(o1), GetConnectionList(o2)
-
-  if c1 then
-    c1[o2] = nil
-  end
-
-  if c2 then
-    c2[o1] = nil
-  end
-end
-
-local function WillBeIntact (state, frame)
-  return state == frame or Intact(state)
-end
-
-local function MakeConnection (o1, o2, frame)
-  -- N.B. getFrameID() has a slight timing bug (it increments after physics)
-  -- with a fix, we would subtract 1 from this ID. Strictly speaking the IDs
-  -- aren't promised to honor this behavior either, though.
-
-	local c1, c2 = EnsureConnectionList(o1), EnsureConnectionList(o2)
-  local fixed = WillBeIntact(c1[o2], frame) and WillBeIntact(c2[o1], frame)
-
-	c1[o2], c2[o1] = true, true
-
-  return fixed
-end
-
-local function OnCollision (o1, o2, phase)
-  if phase == "ended" then
-    BreakConnection(o1, o2)
-  else
-    return MakeConnection(o1, o2, Runtime.getFrameID())
-  end
-end
-
--- TODO: probably too heavy-handed adding these here...
--- might want to, say, switch out game type
--- perhaps export the collision logic, do the others as config?
-
-Runtime:addEventListener("collision", function(event)
-	local o1, o2, phase = event.object1, event.object2, event.phase
-
-	if OnCollision(o1, o2, phase) ~= true then -- if just fixing a connection, no need to respond
-		AuxCollision(phase, o1, o2, event.contact)
-	end
-end)
-
---
---
---
-
-Runtime:addEventListener("enter_level", function()
-  physics.start()
-  physics.setGravity(0, 0)
-end)
-
---
---
---
-
-Runtime:addEventListener("leave_level", function()
-	physics.stop()
 end)
 
 --

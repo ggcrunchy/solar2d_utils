@@ -107,6 +107,10 @@ function M.GetRedirectTarget (func)
 	return Redirects[func]
 end
 
+--
+--
+--
+
 --- DOCME
 function M.Redirect (func, target)
 	assert(not Redirects[func], "Function already redirected")
