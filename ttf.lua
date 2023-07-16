@@ -28,7 +28,9 @@ local min = math.min
 local open = io.open
 local pairs = pairs
 local setmetatable = setmetatable
-local sqrt = math.sqrt
+
+-- Extension imports --
+local hypot = math.hypot
 
 -- Plugins --
 local AssetReader = require("plugin.AssetReader")
@@ -137,7 +139,7 @@ local Samples, Length = {}
 
 local function AddSample (j, x, y)
   if j > 1 then
-    Length = Length + sqrt((x - Samples[j - 3])^2 + (y - Samples[j - 2])^2)
+    Length = Length + hypot(x - Samples[j - 3], y - Samples[j - 2])
   else
     Length = 0
   end
@@ -189,7 +191,7 @@ local function AuxQuadratic (add_point, spacing, prevx, prevy, scale, x, y, cx, 
   for i = 1, SampleCount do
     local t = i / SampleCount
     local s = 1 - t
-    local a, b, c = s^2, 2 * s * t, t^2
+    local a, b, c = s * s, 2 * s * t, t * t
 
     j = AddSample(j, a * prevx + b * cx + c * x, a * prevy + b * cy + c * y)
   end
